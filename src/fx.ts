@@ -10,7 +10,7 @@ const OVERSCAN = 16; // px drawn past each edge of the view, so a picture a tick
 type Command =
   | { type: "spawn"; id: number; fx: string; options: Record<string, unknown> }
   | ({ type: "move"; id: number; x: number; y: number } & FxState)
-  | { type: "poke"; id: number; at: [number, number, number] }
+  | { type: "poke"; id: number; at: number[] }
   | { type: "stop"; id: number };
 
 /** What the game can tell a live character, besides where it is. */
@@ -194,8 +194,8 @@ export class FxLayer {
   }
 
   /** Something touches a live surface at this spot, this hard. */
-  poke(handle: FxHandle, x: number, y: number, power: number) {
-    handle.slot.commands.push({ type: "poke", id: handle.id, at: [x, y, power] });
+  poke(handle: FxHandle, ...at: number[]) {
+    handle.slot.commands.push({ type: "poke", id: handle.id, at });
   }
 
   stop(handle: FxHandle) {

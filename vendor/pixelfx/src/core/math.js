@@ -150,3 +150,25 @@ export function loopNoise(phase, radius = 1, seed = 0) {
   const a = phase * TAU;
   return noise2(Math.cos(a) * radius + 50, Math.sin(a) * radius + 50, seed);
 }
+
+/**
+ * The wind, for whatever it blows. The game sets worldX, worldY (-1 to 1, as it blows across the world) and gust (about 1, how
+ * strong it is just now). x, y are the same wind as the running effect feels it, which may be mirrored or turned. Calm by default.
+ */
+export const breeze = { worldX: 0, worldY: 0, gust: 1, x: 0, y: 0 };
+
+/** Turns the wind into the space of an effect placed with this flip and angle. */
+export function feelBreeze(flip, angle) {
+  const c = Math.cos(angle), s = Math.sin(angle), x = breeze.worldX * c + breeze.worldY * s;
+  breeze.x = flip ? -x : x;
+  breeze.y = breeze.worldY * c - breeze.worldX * s;
+}
+
+/** How much of the floor's depth shows on screen when it's seen from above at a slant. Marks on the floor are ellipses this flat. */
+export const FLOOR_SLANT = 0.55;
+
+/**
+ * Effects are drawn side on, so all they throw would fly along one line and land on it. In a game seen from above, the running
+ * effect sets slant here (its `floor` option), and what it throws fans out across the floor instead. 0 leaves it side on.
+ */
+export const floorView = { slant: 0 };

@@ -1,6 +1,6 @@
 // The stepped leader, the stroke flicker, the cooling channel and the scorch follow Sprite Fusion's open-source
 // lightning (https://www.spritefusion.com/pixel-art-vfx/lightning), MIT License, Copyright (c) 2026 Hugo Duprez.
-import { Particles, Lights, P, Rng, fit, sparkle, clamp, smooth, ease, rand, rng, TAU, WHITE, hex, mix } from "../../core/index.js";
+import { Particles, Lights, P, Rng, fit, sparkle, clamp, smooth, ease, rand, rng, TAU, WHITE, hex, mix, FLOOR_SLANT } from "../../core/index.js";
 import { VOLT, PLASMA, SOOT, SOOT2, zigzag, bend, stroke, crackle, trace, scorch, heat } from "./_lib.js";
 
 export const meta = {
@@ -16,7 +16,7 @@ export const meta = {
   options: { palette: VOLT, sparks: PLASMA, seed: 5 },
 };
 
-const W = 120, TOP = -224, RX = 28, SY = 0.22, REACH = 52, LEAD0 = 0.48, STEPS = 9, MEET = -30;
+const W = 120, TOP = -224, RX = 28, SY = FLOOR_SLANT, REACH = 52, LEAD0 = 0.48, STEPS = 9, MEET = -30;
 const STROKES = [{ t: 0.76, k: 1 }, { t: 1.04, k: 0.8 }, { t: 1.26, k: 0.55 }];
 const FLICK = [1, 0.72, 0.3, 0.95, 0.5, 0.8, 0.22];
 const level = (a) => (a < 0 ? 0 : FLICK[Math.floor(a * 30 + 1e-4)] ?? 0);

@@ -1,8 +1,8 @@
 // One of the workers effects run on. It keeps its own effects and draws them into three pictures, sent back each tick:
 // what goes behind the sprites, what goes in front, and the light over everything.
-import { clearFrame, createFrame, createFx, painterFor } from "../../vendor/pixelfx/src/core/index.js";
+import { breeze, clearFrame, createFrame, createFx, painterFor } from "../../vendor/pixelfx/src/core/index.js";
 import { CATALOG } from "./catalog.js";
-import { air } from "./lib/air.js";
+import { air, gustAt } from "./lib/air.js";
 import { GasField } from "./lib/gas-field.js";
 
 let back, front, light, surfaces, gas;
@@ -52,6 +52,7 @@ function mergeLight() {
 function tick({ dt, commands, ox, oy, anchor, weather }) {
   const start = performance.now();
   Object.assign(air, weather);
+  Object.assign(breeze, { worldX: air.x, worldY: air.y, gust: gustAt(0, 0) });
   back.ox = front.ox = ox;
   back.oy = front.oy = oy;
   commands.forEach(run);

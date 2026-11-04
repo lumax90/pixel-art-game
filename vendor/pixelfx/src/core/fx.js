@@ -1,7 +1,7 @@
 // Frames and live effect instances.
 
 import { Painter } from "./painter.js";
-import { clamp } from "./math.js";
+import { clamp, feelBreeze, floorView } from "./math.js";
 import { stockActor } from "./actor.js";
 import { fit, toHex } from "./color.js";
 
@@ -45,12 +45,13 @@ export function resolveOptions(meta, o = {}) {
 
 /**
  * A live instance of an effect module: { update(dt), draw(frame, layer), stop(), done() }.
- * o: { x, y, flip, angle, seed, palette, light (glow strength), actor, ...the effect's own options }.
+ * o: { x, y, flip, angle, scale, floor, seed, palette, light (glow strength), actor, ...the effect's own options }.
  * draw(frame, "back") draws what goes behind a character, "front" what goes in front, nothing both.
  */
 export function createFx(mod, o = {}) {
   const meta = mod.meta ?? {};
   const opts = resolveOptions(meta, o);
+  floorView.slant = opts.floor ?? 0; // effects start throwing things as soon as they're made
   const impl = mod.create ? mod.create(opts) : mod;
   const D = meta.duration ?? 1;
   let t = 0, stopAt = Infinity;
@@ -63,13 +64,16 @@ export function createFx(mod, o = {}) {
     update(dt) {
       t += dt;
       if (!impl.update) return;
+      feelBreeze(!!opts.flip, opts.angle ?? 0);
+      floorView.slant = opts.floor ?? 0;
       // simulations step at 120 Hz or finer whatever the caller's frame rate, so they look the same everywhere
       const n = Math.max(1, Math.ceil(dt * 120 - 1e-9));
       for (let i = 0; i < n; i++) impl.update(dt / n, opts);
     },
     draw(frame, layer) {
       const p = painterFor(frame);
-      p.place(opts.x ?? 0, opts.y ?? 0, !!opts.flip, opts.angle ?? 0);
+      feelBreeze(!!opts.flip, opts.angle ?? 0);
+      p.place(opts.x ?? 0, opts.y ?? 0, !!opts.flip, opts.angle ?? 0, opts.scale ?? 1);
       p.fade = stopAt === Infinity ? 1 : clamp(1 - (t - stopAt) / FADE);
       p.lightK = opts.light ?? 1;
       const tt = meta.loop ? t % D : Math.min(t, D);

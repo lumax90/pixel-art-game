@@ -4,7 +4,7 @@
 // MIT License, Copyright (c) 2026 Hugo Duprez. Units here are art pixels and seconds; draw through a Painter,
 // so effects stay in local space and mirror or rotate like any other.
 
-import { Rng, clamp, TAU } from "./math.js";
+import { Rng, breeze, clamp, floorView, TAU } from "./math.js";
 import { hex, scale, mix, rgb, WHITE } from "./color.js";
 
 export const GRAVITY = 950; // px/s²
@@ -21,6 +21,22 @@ export const P = { SPARK: 0, MOTE: 1, STREAK: 2, FLAKE: 3, VAPOUR: 4, DUST: 5, S
 /** Particle flags: SMOKES (a FIRE puff leaves smoke when it dies), BIG (bigger, slower smoke), BACK (draw behind). */
 export const PF = { SMOKES: 1, BIG: 2, BACK: 4 };
 const SOFT = new Set([P.VAPOUR, P.DUST, P.SMOKE]);
+/** How hard full wind pushes each kind, px/s²; with its drag this sets how fast the wind carries it. Heavy kinds aren't moved. */
+const WIND_PUSH = { [P.SPARK]: 90, [P.MOTE]: 12, [P.FLAKE]: 100, [P.VAPOUR]: 240, [P.DUST]: 240, [P.EMBER]: 130, [P.SMOKE]: 110, [P.FIRE]: 150 };
+const WIND_DOWN = 0.5; // the wind across the ground shows less up and down the screen
+const FAN = 1.25; // radians either side of its line that something thrown can turn, seen from above
+const GOLDEN = 0.618034; // steps round evenly, without a random number
+
+/** Turns what's thrown round the upright, so it flies off across the floor and not along one line. Its height is unchanged. */
+function fanOut(owner, b) {
+  b.slant = b.base = 0;
+  if (!floorView.slant) return b;
+  owner.turns = ((owner.turns ?? 0) + GOLDEN) % 1;
+  const turn = (owner.turns * 2 - 1) * FAN;
+  b.slant = Math.tan(turn) * floorView.slant;
+  b.vx *= Math.cos(turn);
+  return b;
+}
 
 /**
  * A particle system. opts: { seed, ground: (x) => floor y (local px; sparks bounce on it), sparks: [head..tail]
@@ -40,7 +56,7 @@ export class Particles {
   }
   /** delay: seconds before it appears; flag: PF bits. col 0 lets FIRE and SMOKE use their own ramps. */
   spawn(k, x, y, vx, vy, life, col = WHITE, size = 1, delay = 0, flag = 0) {
-    this.list.push({ k, x, y, vx, vy, life, max: life, col: col ? hex(col) : 0, size, seed: this.R.next() * 100, delay, flag });
+    this.list.push(fanOut(this, { k, x, y, vx, vy, life, max: life, col: col ? hex(col) : 0, size, seed: this.R.next() * 100, delay, flag }));
   }
   get count() {
     return this.list.length;
@@ -62,6 +78,12 @@ export class Particles {
         this.list.splice(i, 1);
         continue;
       }
+      const across = p.slant * p.vx * dt; // going across the floor shows as going up or down the screen, and takes its floor along
+      p.y += across;
+      p.base += across;
+      const push = WIND_PUSH[p.k] ?? 0;
+      p.vx += breeze.x * push * dt;
+      p.vy += breeze.y * push * WIND_DOWN * dt;
       switch (p.k) {
         case P.FIRE:
           p.vy -= 95 * dt;
@@ -72,7 +94,7 @@ export class Particles {
         case P.GRIT: {
           p.vy += GRAVITY * dt;
           p.vx -= p.vx * 0.8 * dt;
-          const g = this.ground(p.x), ny = p.y + p.vy * dt;
+          const g = this.ground(p.x) + p.base, ny = p.y + p.vy * dt;
           p.x += p.vx * dt;
           if (p.vy > 0 && p.y <= g && ny >= g) {
             p.y = g - 0.25;
@@ -86,7 +108,7 @@ export class Particles {
           p.vy += GRAVITY * 0.8 * dt;
           p.vx -= p.vx * 0.9 * dt;
           if (R.chance(0.9 * Math.min(1, dt * 60))) this.spawn(P.FIRE, p.x, p.y, p.vx * 0.1 + R.range(-7, 7), p.vy * 0.1 - 10, R.range(0.16, 0.32), 0, R.range(0.9, 1.7) * (0.5 + (p.life / p.max) * 0.6), 0, R.chance(0.4) ? PF.SMOKES : 0);
-          const g = this.ground(p.x), ny = p.y + p.vy * dt;
+          const g = this.ground(p.x) + p.base, ny = p.y + p.vy * dt;
           p.x += p.vx * dt;
           if (p.vy > 0 && p.y <= g && ny >= g) {
             this.onLand?.(p.x, g);
@@ -98,7 +120,7 @@ export class Particles {
           p.vy += GRAVITY * 0.45 * dt;
           p.vx -= p.vx * 2.2 * dt;
           p.vy -= p.vy * 2.2 * dt;
-          const g = this.ground(p.x), ny = p.y + p.vy * dt;
+          const g = this.ground(p.x) + p.base, ny = p.y + p.vy * dt;
           p.x += p.vx * dt;
           if (p.vy > 0 && p.y <= g && ny >= g) (p.vy = -p.vy * 0.45), (p.vx *= 0.7), (p.y = g - 0.25);
           else p.y = ny;
@@ -289,7 +311,7 @@ export class Bits {
   }
   add(b) {
     const life = b.life ?? 1;
-    this.list.push({ kind: B.SHARD, vx: 0, vy: 0, a: 0, va: 0, s: 1, c: WHITE, g: 1, drag: 0, bounce: 0, rest: false, ...b, life, max: life });
+    this.list.push(fanOut(this, { kind: B.SHARD, vx: 0, vy: 0, a: 0, va: 0, s: 1, c: WHITE, g: 1, drag: 0, bounce: 0, rest: false, ...b, life, max: life }));
   }
   get count() {
     return this.list.length;
@@ -306,9 +328,11 @@ export class Bits {
       b.vx -= b.vx * b.drag * dt;
       b.vy -= b.vy * b.drag * dt;
       b.x += b.vx * dt;
-      b.y += b.vy * dt;
+      const across = b.slant * b.vx * dt;
+      b.y += b.vy * dt + across;
+      b.base += across;
       b.a += b.va * dt;
-      const floor = this.ground(b.x), sp = b.vy;
+      const floor = this.ground(b.x) + b.base, sp = b.vy;
       if (b.g <= 0 || b.y < floor || sp <= 0) continue;
       b.y = floor - 0.01;
       if (b.kind === B.DRIP) b.life = 0;

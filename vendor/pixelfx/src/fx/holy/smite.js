@@ -1,4 +1,4 @@
-import { Particles, Bits, Lights, P, PF, B, Rng, fit, sparkle, band, bolt, clamp, smooth, seg, lerp, ease, TAU, WHITE, hex, mix, scale } from "../../core/index.js";
+import { Particles, Bits, Lights, P, PF, B, Rng, fit, sparkle, band, bolt, clamp, smooth, seg, lerp, ease, TAU, WHITE, hex, mix, scale, FLOOR_SLANT } from "../../core/index.js";
 import { GOLD, oval } from "./_lib.js";
 
 export const meta = {
@@ -14,7 +14,7 @@ export const meta = {
   options: { palette: GOLD, stone: "#5a5066", seed: 9 },
 };
 
-const TOP = -148, SY = 0.38, MARK = 0.42, HIT = 0.54, LEN = 44;
+const TOP = -148, SY = FLOOR_SLANT, MARK = 0.42, HIT = 0.54, LEN = 44;
 const OUTLINE = hex("#1a1422");
 
 // a chip of stone: lit side, shaded side, outline

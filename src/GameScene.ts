@@ -2,10 +2,10 @@ import * as Phaser from "phaser";
 import { FxLayer, type FxHandle } from "./fx";
 import { STROKES } from "./fx/characters/knight.js";
 import { SY } from "./fx/lib/gas-field.js";
-import { SKILLS, type Skill } from "./skills";
-import { paintGround } from "./tiles/ground.js";
+import { ON_FLOOR, SKILLS, type Skill } from "./skills";
+import { paintGround, tearGround, WALL } from "./tiles/ground.js";
 import { GROUPS } from "./tiles/groups.js";
-import { TEST_MAP } from "./tiles/test-map.js";
+import { TEST_LEVELS, TEST_MAP } from "./tiles/test-map.js";
 import { weather } from "./weather/weather.js";
 
 const GROUND_SEED = Number(new URLSearchParams(location.search).get("seed")) || 1;
@@ -13,18 +13,20 @@ const START = { x: 144, y: 151 };
 const DUMMY_SPOT = { x: 326, y: 151 };
 const WATER = GROUPS.findIndex((group) => group.active);
 const FEET_AHEAD = 6; // px ahead of his feet the ground is checked
+const SPLASH_SIZE = 0.6;
 const WADE_DEPTH = 12; // px out from the shore he can still stand
 const WADING = 0.55; // how much water slows him
 const SKILL_SPLASH = 2.2;
-const SKILL_LANDS_MS = 450; // about when a skill aimed at the ground gets there
 
+const TEAR_STAYS_MS = 4000, TEAR_HEALS_MS = 4000; // how long a tear stays bare earth, then how long the grass takes to come back over it
+const TEAR_HEAL_STEP_MS = 66; // how often that's redrawn
 const DIM_DEPTH = 2; // over the floor and shadows, under every sprite
 const FX_BACK_DEPTH = 3;
 const FX_FRONT_DEPTH = 4000; // over everything that sorts by its height on the screen
 const NIGHT_AMBIENT = { r: 44, g: 54, b: 96 }; // what's left when the sun is down
 const LANTERN = { color: 0xffbe7a, radius: 150, strength: 1.7, height: 70 }; // what he carries
 const BRAZIER = { x: 410, y: 214, color: 0xff9a4a, radius: 230, strength: 2.4, height: 90 };
-const BLAST_LIGHT = { color: 0xffb060, radius: 170, strength: 3, ms: 420, height: 60 }; // what a spell throws on the world as it lands
+const BLAST_LIGHT = { color: 0xffb060, radius: 120, strength: 3, ms: 420, height: 60 }; // what a spell throws on the world as it lands
 const CLOUD_DARK = 0.34; // how much a full sky of cloud darkens the ground
 const SKY_STARTS = 0.015, SKY_ENDS = 0.008;
 const GALE = 0.6; // wind from which snow becomes a blizzard
@@ -60,6 +62,17 @@ interface Bolt {
   vy: number;
   left: number;
   skill: Skill;
+  fromHigh: boolean;
+}
+
+/** A patch of bare earth in the ground: where it is, and its pixels, 0 where it leaves the ground alone. */
+interface Tear {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  pixels: Uint32Array;
+  healsFrom: number;
 }
 
 interface Walker {
@@ -80,6 +93,15 @@ export class GameScene extends Phaser.Scene {
   private dummy!: Phaser.Physics.Arcade.Sprite;
   private dim!: Phaser.GameObjects.Rectangle;
   private terrain!: Int8Array;
+  private walls!: Uint8Array;
+  private raised!: Uint8Array;
+  private groundPixels!: Uint32Array;
+  private untouchedGround!: Uint32Array;
+  private groundColors!: ImageData;
+  private groundPicture!: Phaser.Textures.CanvasTexture;
+  private tears: Tear[] = [];
+  private tearsHealAt = 0;
+
   private fx!: FxLayer;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<"w" | "a" | "s" | "d", Phaser.Input.Keyboard.Key>;
@@ -120,7 +142,7 @@ export class GameScene extends Phaser.Scene {
     this.dim = this.add.rectangle(0, 0, width, height, 0x04030a).setOrigin(0).setDepth(DIM_DEPTH).setAlpha(0);
     this.fx = new FxLayer(this, { viewW: width, viewH: height, worldW: width, worldH: height, backDepth: FX_BACK_DEPTH, frontDepth: FX_FRONT_DEPTH });
     this.water = this.fx.add("tiles/water", { x: START.x, y: START.y, pixels: waterPixels, pokes: [], seed: GROUND_SEED });
-    this.grass = this.fx.add("tiles/grass", { x: START.x, y: START.y, blades });
+    this.grass = this.fx.add("tiles/grass", { pokes: [], x: START.x, y: START.y, blades });
     this.fx.add("fire/brazier", { x: BRAZIER.x, y: BRAZIER.y, seed: this.seed++ });
     this.lights.enable();
     this.fx.useLights();
@@ -167,6 +189,7 @@ export class GameScene extends Phaser.Scene {
     weather.update(dt, time / 1000);
     this.changeSky();
     this.changeLight(time);
+    this.healTears(time);
     const hero = { x: this.player.x, y: this.feetY };
     this.fx.update(dt, 0, 0, hero, weather.air);
     this.fx.keepHeroAt(hero.x, hero.y);
@@ -175,13 +198,19 @@ export class GameScene extends Phaser.Scene {
 
   /** Paints the tiles into one picture, and hands back the pixels that are water for the live water to work on. */
   private createGround() {
-    const { width, height } = this.scale, { pixels, terrain, depth, water, blades } = paintGround(TEST_MAP, GROUND_SEED, width, height), canvas = document.createElement("canvas");
+    const { width, height } = this.scale, { pixels, terrain, walls, raised, depth, water, blades } = paintGround(TEST_MAP, GROUND_SEED, width, height, TEST_LEVELS), canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
-    canvas.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), width, height), 0, 0);
-    this.textures.addCanvas("ground", canvas);
+    this.groundColors = new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer), width, height);
+    canvas.getContext("2d")!.putImageData(this.groundColors, 0, 0);
+    this.groundPicture = this.textures.addCanvas("ground", canvas)!;
     this.add.image(0, 0, "ground").setOrigin(0).setLighting(true);
+    this.groundPixels = pixels;
+    this.untouchedGround = pixels.slice();
+    this.tears = [];
     this.terrain = terrain;
+    this.walls = walls;
+    this.raised = raised;
     this.depth = depth;
     return { water, blades };
   }
@@ -231,6 +260,74 @@ export class GameScene extends Phaser.Scene {
     return this.depthAt(x, y) > WADE_DEPTH;
   }
 
+  /** What's at a spot of the ground, in a map of the same size. */
+  private at<T extends { [i: number]: number }>(map: T, x: number, y: number) {
+    const { width, height } = this.scale;
+    return map[Phaser.Math.Clamp(Math.round(y), 0, height - 1) * width + Phaser.Math.Clamp(Math.round(x), 0, width - 1)];
+  }
+
+  /** Whether anything stops him going this way: every pixel up to his reach is tried, since the rim of high ground is one pixel thin. */
+  private blocked(x: number, y: number, dx: number, dy: number) {
+    for (let ahead = 1; ahead <= FEET_AHEAD; ahead++) {
+      const px = x + dx * ahead, py = y + dy * ahead;
+      if (this.tooDeep(px, py) || this.at(this.walls, px, py)) return true;
+    }
+    return false;
+  }
+
+  /** What a skill does where it lands: it hits the grass round it, and on water it throws up a splash. */
+  private strike(skill: Skill, x: number, y: number) {
+    this.time.delayedCall(skill.lands ?? 0, () => {
+      this.flash(x, y);
+      if (skill.world) {
+        const { reach, push = 0, burn, frost, tear = 0 } = skill.world;
+        this.fx.poke(this.grass, x, y, push, reach, burn ? 1 : 0, frost ? 1 : 0, tear);
+        if (tear) this.tear(x, y, tear);
+      }
+      if (this.depthAt(x, y)) this.fx.add("water/splash", { x, y, stone: false, scale: SPLASH_SIZE, seed: this.seed++ });
+    });
+    this.ripple(x, y, SKILL_SPLASH, skill.lands ?? 0);
+  }
+
+  /** Paints a tear into the ground where a blow landed. */
+  private tear(x: number, y: number, size: number) {
+    const { width, height } = this.scale, torn = tearGround(this.terrain, width, height, x, y, size, this.seed++);
+    if (!torn) return;
+    this.tears.push({ ...torn, healsFrom: this.time.now + TEAR_STAYS_MS });
+    this.paintTear(torn, 0);
+    this.groundPicture.context.putImageData(this.groundColors, 0, 0, torn.x, torn.y, torn.w, torn.h);
+    this.groundPicture.refresh();
+  }
+
+  /** Puts a tear on the ground with the grass this far back over it, 0 to 1. */
+  private paintTear({ x, y, w, h, pixels }: Pick<Tear, "x" | "y" | "w" | "h" | "pixels">, healed: number) {
+    const { width } = this.scale, ground = this.groundPixels, untouched = this.untouchedGround;
+    const mix = (from: number, to: number, shift: number) => Math.round(((from >>> shift) & 255) + (((to >>> shift) & 255) - ((from >>> shift) & 255)) * healed) << shift;
+    for (let row = 0; row < h; row++)
+      for (let column = 0; column < w; column++) {
+        const earth = pixels[row * w + column], at = (y + row) * width + x + column;
+        if (earth) ground[at] = (0xff000000 | mix(earth, untouched[at], 0) | mix(earth, untouched[at], 8) | mix(earth, untouched[at], 16)) >>> 0;
+      }
+  }
+
+  /** The grass comes back over each tear in turn. Oldest first, so where two overlap the newer stays on top. */
+  private healTears(time: number) {
+    if (!this.tears.length || time < this.tearsHealAt) return;
+    this.tearsHealAt = time + TEAR_HEAL_STEP_MS;
+    const healing = this.tears.filter((tear) => time >= tear.healsFrom);
+    if (!healing.length) return;
+    for (const tear of this.tears) this.paintTear(tear, Phaser.Math.Clamp((time - tear.healsFrom) / TEAR_HEALS_MS, 0, 1));
+    this.tears = this.tears.filter((tear) => time < tear.healsFrom + TEAR_HEALS_MS);
+    for (const { x, y, w, h } of healing) this.groundPicture.context.putImageData(this.groundColors, 0, 0, x, y, w, h);
+    this.groundPicture.refresh();
+  }
+
+  /** The color of what a blow throws up at a spot: the ground it landed on. */
+  private debrisAt(x: number, y: number) {
+    const { width, height } = this.scale, px = Phaser.Math.Clamp(Math.round(x), 0, width - 1), py = Phaser.Math.Clamp(Math.round(y), 0, height - 1);
+    return GROUPS[this.terrain[py * width + px]].debris;
+  }
+
   /** A blow that lands on water shows on it. */
   private ripple(x: number, y: number, power: number, delay = 0) {
     if (this.depthAt(x, y)) this.time.delayedCall(delay, () => this.fx.poke(this.water, x, y, power));
@@ -246,8 +343,8 @@ export class GameScene extends Phaser.Scene {
     const hit = this.strokeAt + STROKES[this.stroke].hit * 1000;
     if (striking && time > hit - LUNGE_MS && time < hit) velocity.set(Math.cos(this.strokeFacing) * LUNGE_SPEED, Math.sin(this.strokeFacing) * LUNGE_SPEED * SY);
     // each way is tried by itself, so he slides along the shore
-    if (velocity.x && this.tooDeep(this.player.x + Math.sign(velocity.x) * FEET_AHEAD, feetY)) velocity.x = 0;
-    if (velocity.y && this.tooDeep(this.player.x, feetY + Math.sign(velocity.y) * FEET_AHEAD)) velocity.y = 0;
+    if (velocity.x && this.blocked(this.player.x, feetY, Math.sign(velocity.x), 0)) velocity.x = 0;
+    if (velocity.y && this.blocked(this.player.x, feetY, 0, Math.sign(velocity.y))) velocity.y = 0;
     this.playerBody.setVelocity(velocity.x, velocity.y);
 
     // swinging he looks along the blow; walking, where he's going; standing, at the cursor
@@ -329,10 +426,12 @@ export class GameScene extends Phaser.Scene {
     const { worldX, worldY } = this.input.activePointer;
     const x = this.player.x, y = this.feetY;
     if (skill.kind === "ground") {
-      this.spawn(skill, skill.fx, worldX, worldY);
-      this.ripple(worldX, worldY, SKILL_SPLASH, SKILL_LANDS_MS);
-      this.time.delayedCall(SKILL_LANDS_MS, () => this.flash(worldX, worldY));
-    } else if (skill.kind === "self") this.spawn(skill, skill.fx, x, y);
+      this.spawn(skill, skill.fx, worldX, worldY, { stone: this.debrisAt(worldX, worldY) });
+      this.strike(skill, worldX, worldY);
+    } else if (skill.kind === "self") {
+      this.spawn(skill, skill.fx, x, y);
+      this.strike(skill, x, y);
+    }
     else if (skill.kind === "aimed") this.spawn(skill, skill.fx, x, y, { angle: Math.atan2(worldY - y, worldX - x) });
     else this.launch(skill, x, y - HAND_HEIGHT, worldX, worldY);
   }
@@ -345,7 +444,7 @@ export class GameScene extends Phaser.Scene {
     const angle = Math.atan2(toY - y, toX - x), speed = skill.speed!;
     const fx = this.spawn(skill, skill.fx, x, y, { angle });
     const left = Math.hypot(toX - x, toY - y) / speed;
-    this.bolts.push({ fx, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, left, skill });
+    this.bolts.push({ fx, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, left, skill, fromHigh: !!this.at(this.raised, x, y + HAND_HEIGHT) });
   }
 
   private moveBolts(dt: number) {
@@ -353,11 +452,11 @@ export class GameScene extends Phaser.Scene {
       const x = bolt.fx.x + bolt.vx * dt, y = bolt.fx.y + bolt.vy * dt;
       this.fx.move(bolt.fx, x, y);
       bolt.left -= dt;
-      if (bolt.left > 0) return true;
+      const hitsCliff = !bolt.fromHigh && this.at(this.walls, x, y) === WALL.FACE; // from below a cliff stops it; from above it flies out over
+      if (bolt.left > 0 && !hitsCliff) return true;
       this.fx.stop(bolt.fx);
-      this.ripple(x, y, SKILL_SPLASH);
-      this.flash(x, y);
-      if (bolt.skill.impact) this.fx.add(bolt.skill.impact, { x, y, seed: this.seed++ });
+      this.strike(bolt.skill, x, y);
+      if (bolt.skill.impact) this.fx.add(bolt.skill.impact, { x, y, ...ON_FLOOR, scale: bolt.skill.options?.scale, stone: this.debrisAt(x, y), seed: this.seed++ });
       return false;
     });
   }

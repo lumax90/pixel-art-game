@@ -123,13 +123,13 @@ function stoneVariants() {
 /**
  * Lowest first: a group higher in the list lies over the ones below it where they meet. `tones` are the three close colors
  * large soft patches of ground take; the ramp is for what stands out. `wander` is how far its border strays: laid stone keeps
- * a straighter line than grass. `rim` colors the edge of a group lying over another.
+ * a straighter line than grass. `rim` colors the edge of a group lying over another. `debris` is what a blow throws up from it.
  */
 export const GROUPS = [
-  { id: "water", name: "Su", char: "~", ramp: WATER, active: true, variants: [] },
-  { id: "dirt", name: "Toprak", char: ".", ramp: DIRT, tones: ramp(["#75563f", "#7f5f45", "#8a6a4c"]), variants: dirtVariants() },
-  { id: "stone", name: "Taş", char: "#", ramp: STONE, tones: ramp(["#5a5c68", "#646672", "#6f7078"]), laid: true, wander: 0.4, variants: stoneVariants() },
-  { id: "grass", name: "Çim", char: ",", ramp: GRASS, tones: ramp(["#427e3f", "#498842", "#519346"]), rim: true, grows: true, variants: grassVariants() },
+  { id: "water", name: "Su", char: "~", ramp: WATER, active: true, debris: "#2c4a78", variants: [] },
+  { id: "dirt", name: "Toprak", char: ".", ramp: DIRT, debris: "#5e4430", tones: ramp(["#75563f", "#7f5f45", "#8a6a4c"]), variants: dirtVariants() },
+  { id: "stone", name: "Taş", char: "#", ramp: STONE, debris: "#5f6170", tones: ramp(["#5a5c68", "#646672", "#6f7078"]), laid: true, wander: 0.4, variants: stoneVariants() },
+  { id: "grass", name: "Çim", char: ",", ramp: GRASS, debris: "#4d3b28", tones: ramp(["#427e3f", "#498842", "#519346"]), rim: true, grows: true, variants: grassVariants() },
 ];
 
 const shades = (rows) => rows.map(ramp);
@@ -164,6 +164,8 @@ export const GRASSES = [
 
 /** The earth showing where land stops at water. */
 export const BANK = [DIRT[0], DIRT[1], DIRT[2]];
+/** The rock a cliff is made of. */
+export const ROCK = ramp(["#231d24", "#3d3138", "#5a4a48", "#7a6658", "#9c8a70"]);
 
 /** The ground under water, from the shallows out. */
 export const BED = ramp(["#6f6a4e", "#3f5a5a", "#142c4c"]);

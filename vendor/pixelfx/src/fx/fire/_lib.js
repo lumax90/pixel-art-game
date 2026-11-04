@@ -4,7 +4,10 @@
 // recipes are adapted from Sprite Fusion's open-source fire (https://www.spritefusion.com/pixel-art-vfx/fire),
 // MIT License, Copyright (c) 2026 Hugo Duprez.
 
-import { rand, rng, wrap, noise, mix, hex, clamp, WHITE, SMOKE_RAMP, P, PF } from "../../core/index.js";
+import { rand, rng, wrap, noise, mix, hex, clamp, breeze, WHITE, SMOKE_RAMP, P, PF } from "../../core/index.js";
+
+const WIND_LEAN = 1.2; // how far full wind lays a flame over, as sideways px per px of height
+const WIND_CARRY = 110, WIND_DOWN = 0.5; // how hard it pushes what flies off the fire, px/s², and how much less up and down the screen
 
 /** Smooth value noise in [-1, 1] that repeats every `period` cells (a whole number). */
 export function pnoise(x, period, seed = 0) {
@@ -59,6 +62,11 @@ export const BACK_LAYERS = [[1, 1, 7], [0.76, 0.86, 5], [0.54, 0.68, 3], [0.3, 0
  * jit: how far the edges crackle (px); wob: how far the tip wanders (px).
  */
 export function flameTongue(p, x, y, h, w, sx, N, n, H, layers = LAYERS, jit = 0.5, wob = 1.1) {
+  // the wind lays it over, and it keeps its length; the harder it blows, the more it tears at the edges
+  const lean = breeze.x * breeze.gust * WIND_LEAN;
+  h /= Math.hypot(1, lean);
+  sx += lean * h;
+  jit += Math.abs(breeze.x) * 0.5;
   if (h < 1) return;
   for (const [lw, lh, ri] of layers) {
     const L = h * lh, c = H[ri];
@@ -93,6 +101,7 @@ export function flameBlade(p, x, y, ux, uy, len, w, bend, N, n, H, layers = LAYE
 
 /** A solid disc drawn straight in screen space (fast; a disc looks the same mirrored or turned). */
 export function solid(p, x, y, r, c) {
+  r *= p.k;
   if (r < 0.6) return p.px(x, y, c);
   const cx = p.toX(x, y), cy = p.toY(x, y), r2 = r * r;
   for (let sy = Math.floor(cy - r); sy <= Math.ceil(cy + r); sy++) {
@@ -106,6 +115,7 @@ export function solid(p, x, y, r, c) {
 /** A translucent disc in screen space: smoke and haze. */
 export function soft(p, x, y, r, c, a) {
   if (a <= 0.004) return;
+  r *= p.k;
   if (r < 0.5) return p.blend(x, y, c, a);
   const cx = p.toX(x, y), cy = p.toY(x, y), r2 = r * r;
   for (let sy = Math.floor(cy - r); sy <= Math.ceil(cy + r); sy++) {
@@ -197,7 +207,7 @@ function along(x, v, a, k, t) {
  * (0, -16, 1.6, 1.2), EMBER (0, -30, 1.6, 1.6), SPARK (0, 427, 2.2, 2.2).
  */
 export function drift(x, y, vx, vy, t, ax, ay, kx, ky) {
-  const X = along(x, vx, ax, kx, t), Y = along(y, vy, ay, ky, t);
+  const X = along(x, vx, ax + (kx > 0 ? breeze.x * WIND_CARRY : 0), kx, t), Y = along(y, vy, ay + (ky > 0 ? breeze.y * WIND_CARRY * WIND_DOWN : 0), ky, t);
   return [X[0], Y[0], X[1], Y[1]];
 }
 

@@ -1,7 +1,7 @@
 // The impact's particle recipe (fire puffs that cool into smoke, sparks, embers, burning brands that land and
 // keep burning, rocks, grit, dust, scorch) is adapted from Sprite Fusion's open-source explosion
 // (https://www.spritefusion.com/pixel-art-vfx/explosion), MIT License, Copyright (c) 2026 Hugo Duprez.
-import { Particles, Bits, Lights, Blazes, P, PF, B, Rng, fit, band, flare, clamp, smooth, ease, noise, rand, TAU, WHITE, hex, mix, scale, rgb } from "../../core/index.js";
+import { Particles, Bits, Lights, Blazes, P, PF, B, Rng, fit, band, flare, clamp, smooth, ease, noise, rand, TAU, WHITE, hex, mix, scale, rgb, FLOOR_SLANT } from "../../core/index.js";
 import { hotFirst, flameBlade, simDraw, floorLight, LAYERS } from "./_lib.js";
 
 export const meta = {
@@ -22,6 +22,7 @@ export const meta = {
   },
 };
 
+const LIP_STONES = 64;
 const HIT = 0.62, FROM = [-112, -142], SOOT = hex("#0d0a12"), SOOT2 = hex("#17121d"), OUTLINE = hex("#1a1422"), WARM = rgb(255, 176, 96);
 
 function stone(c) {
@@ -71,8 +72,8 @@ export function create(o) {
   // the crater: hot rock pooled in the dent cooling to soot, a lip of broken floor
   const crater = (p) => {
     if (t < HIT) return;
-    const a = t - HIT, end = 1 - smooth(meta.duration - 1, meta.duration - 0.15, t), rx = 36 * Math.min(1, a / 0.08), ry = 6;
-    for (let y = -1; y <= 3; y++)
+    const a = t - HIT, end = 1 - smooth(meta.duration - 1, meta.duration - 0.15, t), rx = 36 * Math.min(1, a / 0.08), ry = rx * FLOOR_SLANT;
+    for (let y = Math.floor(-ry); y <= Math.ceil(ry); y++)
       for (let x = Math.floor(-rx); x <= Math.ceil(rx); x++) {
         const dx = (x + 0.5) / rx, dy = (y + 0.5) / ry, d = Math.sqrt(dx * dx + dy * dy);
         if (d > 1) continue;
@@ -80,14 +81,14 @@ export function create(o) {
         if (T > 0.06) {
           const ramp = [H[0], H[1], H[2], H[3], H[4], H[5], H[6], H[7], H[8]], c = ramp[Math.min(8, Math.floor((1 - Math.min(1, T)) * 8))];
           p.dot(x, y, c, end);
-          if ((x & 3) === 0) p.glow(x + 0.5, y, 7, c, 0.2 * T * end);
+          if ((x & 3) === 0 && (y & 3) === 0) p.glow(x + 0.5, y, 7, c, 0.3 * T * end);
         } else p.dot(x, y, d < 0.55 ? SOOT : SOOT2, (d < 0.95 - k * 0.3 ? 1 : 1 - d) * end);
       }
     // the lip: broken floor heaped round the edge, lit by the glow inside
-    for (let x = -40; x <= 40; x++) {
-      const e = Math.abs(x) / 40, hh = e < 0.7 ? 0 : Math.round(2.4 * Math.sin(((e - 0.7) / 0.3) * Math.PI) * (0.6 + 0.4 * rand(x, S + 7)));
-      for (let j = 0; j < hh; j++) p.dot(x, -1 - j, j === hh - 1 ? mix(st.light, H[4], 0.5 * clamp(1 - a / 2)) : st.shade, end);
-      if (hh) p.dot(x, 0, OUTLINE, end);
+    for (let i = 0; i < LIP_STONES; i++) {
+      const g = (i / LIP_STONES) * TAU, x = Math.round(Math.cos(g) * 40), y = Math.round(Math.sin(g) * 40 * FLOOR_SLANT), hh = 1 + Math.round(2 * rand(i, S + 7));
+      for (let j = 0; j < hh; j++) p.dot(x, y - 1 - j, j === hh - 1 ? mix(st.light, H[4], 0.5 * clamp(1 - a / 2)) : st.shade, end);
+      p.dot(x, y, OUTLINE, end);
     }
   };
 
@@ -145,7 +146,7 @@ export function create(o) {
       for (const b of bits.list)
         if (b.rest && !b.dusted) {
           b.dusted = true;
-          for (let i = 0; i < 3; i++) ps.spawn(P.DUST, b.x + R.range(-1.5, 1.5), -0.5, R.sign() * R.range(8, 35), -R.range(2, 18), R.range(0.3, 0.6), st.dust, R.range(1.3, 2.6));
+          for (let i = 0; i < 3; i++) ps.spawn(P.DUST, b.x + R.range(-1.5, 1.5), b.y - 0.5, R.sign() * R.range(8, 35), -R.range(2, 18), R.range(0.3, 0.6), st.dust, R.range(1.3, 2.6));
         }
       blazes.update(dt);
       ps.update(dt);
@@ -156,11 +157,11 @@ export function create(o) {
       simDraw(p, ps, H, "back");
       blazes.drawBack(p);
       const k = (t - HIT) / 0.5;
-      if (k > 0 && k < 1) band(p, 0, 0.5, 110 * ease.outCubic(k), 0.16, Math.max(1, 5 * (1 - k)), 1.15 - k, [st.body, st.light, H[4], H[1]], (g) => Math.sin(g) < 0);
+      if (k > 0 && k < 1) band(p, 0, 0.5, 110 * ease.outCubic(k), FLOOR_SLANT, Math.max(1, 5 * (1 - k)), 1.15 - k, [st.body, st.light, H[4], H[1]], (g) => Math.sin(g) < 0);
     },
     draw(p) {
       const k = (t - HIT) / 0.5;
-      if (k > 0 && k < 1) band(p, 0, 0.5, 110 * ease.outCubic(k), 0.16, Math.max(1, 5 * (1 - k)), 1.15 - k, [st.body, st.light, H[4], H[1]], (g) => Math.sin(g) >= 0, k < 0.12);
+      if (k > 0 && k < 1) band(p, 0, 0.5, 110 * ease.outCubic(k), FLOOR_SLANT, Math.max(1, 5 * (1 - k)), 1.15 - k, [st.body, st.light, H[4], H[1]], (g) => Math.sin(g) >= 0, k < 0.12);
       for (const b of bits.list) rock(p, b, st);
       if (t < HIT) {
         // the comet: tongues of flame streaming back off the rock, the rock, its light; the floor lights up below

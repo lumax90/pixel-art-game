@@ -1,7 +1,7 @@
 // The particle recipe (fire puffs that cool into smoke, sparks, embers, burning brands, grit, rocks, scorch) is
 // adapted from Sprite Fusion's open-source explosion (https://www.spritefusion.com/pixel-art-vfx/explosion),
 // MIT License, Copyright (c) 2026 Hugo Duprez.
-import { Particles, Bits, Lights, Blazes, P, PF, B, Rng, fit, band, clamp, smooth, ease, rand, TAU, WHITE, hex, mix, scale, rgb } from "../../core/index.js";
+import { Particles, Bits, Lights, Blazes, P, PF, B, Rng, fit, band, clamp, smooth, ease, rand, TAU, WHITE, hex, mix, scale, rgb, FLOOR_SLANT } from "../../core/index.js";
 
 export const meta = {
   name: "Explosion",
@@ -26,8 +26,8 @@ function stone(c) {
 // the floor under the blast: white-hot, cooling through the fire ramp to soot
 function scorch(p, F, t, rx0, cool, fade) {
   if (fade <= 0) return;
-  const rx = rx0 * Math.min(1, t / 0.08), ry = 4, heat = [...F].reverse();
-  for (let y = 0; y <= 2; y++)
+  const rx = rx0 * Math.min(1, t / 0.08), ry = rx * FLOOR_SLANT, heat = [...F].reverse();
+  for (let y = Math.floor(-ry); y <= Math.ceil(ry); y++)
     for (let x = Math.floor(-rx); x <= Math.ceil(rx); x++) {
       const dx = (x + 0.5) / rx, dy = (y + 0.5) / ry, d = Math.sqrt(dx * dx + dy * dy);
       if (d > 1) continue;
@@ -35,7 +35,7 @@ function scorch(p, F, t, rx0, cool, fade) {
       if (T > 0.06) {
         const c = heat[Math.min(heat.length - 1, Math.floor((1 - Math.min(1, T)) * (heat.length - 1)))];
         p.dot(x, y, c, fade);
-        if ((x & 3) === 0) p.glow(x + 0.5, y, 6, c, 0.18 * T * fade);
+        if ((x & 3) === 0 && (y & 3) === 0) p.glow(x + 0.5, y, 6, c, 0.27 * T * fade);
       } else p.dot(x, y, d < 0.5 ? SOOT : SOOT2, (d < 0.95 - k * 0.3 ? 1 : 1 - d) * fade);
     }
 }
@@ -116,7 +116,7 @@ export function create(o) {
       for (const b of rocks.list)
         if (b.rest && !b.dusted) {
           b.dusted = true;
-          for (let i = 0; i < 3; i++) ps.spawn(P.DUST, b.x + R.range(-1.5, 1.5), -0.5, R.sign() * R.range(10, 55) * 0.6, -R.range(2, 22), R.range(0.3, 0.65), st.dust, R.range(1.3, 2.8));
+          for (let i = 0; i < 3; i++) ps.spawn(P.DUST, b.x + R.range(-1.5, 1.5), b.y - 0.5, R.sign() * R.range(10, 55) * 0.6, -R.range(2, 22), R.range(0.3, 0.65), st.dust, R.range(1.3, 2.8));
         }
       blazes.update(dt);
       ps.update(dt);
@@ -127,11 +127,11 @@ export function create(o) {
       ps.draw(p, "back");
       blazes.drawBack(p);
       const k = t / 0.5;
-      if (k < 1) band(p, 0, 0.5, 80 * S * ease.outCubic(k), 0.16, Math.max(1, (2 + RAD / 9) * (1 - k)), 1.15 - k, [st.body, st.light, F[3], F[6]], (g) => Math.sin(g) < 0);
+      if (k < 1) band(p, 0, 0.5, 80 * S * ease.outCubic(k), FLOOR_SLANT, Math.max(1, (2 + RAD / 9) * (1 - k)), 1.15 - k, [st.body, st.light, F[3], F[6]], (g) => Math.sin(g) < 0);
     },
     draw(p) {
       const k = t / 0.5;
-      if (k < 1) band(p, 0, 0.5, 80 * S * ease.outCubic(k), 0.16, Math.max(1, (2 + RAD / 9) * (1 - k)), 1.15 - k, [st.body, st.light, F[3], F[6]], (g) => Math.sin(g) >= 0);
+      if (k < 1) band(p, 0, 0.5, 80 * S * ease.outCubic(k), FLOOR_SLANT, Math.max(1, (2 + RAD / 9) * (1 - k)), 1.15 - k, [st.body, st.light, F[3], F[6]], (g) => Math.sin(g) >= 0);
       for (const b of rocks.list) rock(p, b, st);
       ps.draw(p, "front");
       for (const f of flashes) {

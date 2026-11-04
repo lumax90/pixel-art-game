@@ -14,6 +14,7 @@ import * as snowflakeBurst from "../../vendor/pixelfx/src/fx/ice/snowflake-burst
 import * as lightningStrike from "../../vendor/pixelfx/src/fx/lightning/lightning-strike.js";
 import * as spinSlash from "../../vendor/pixelfx/src/fx/melee/spin-slash.js";
 import * as thorns from "../../vendor/pixelfx/src/fx/nature/thorns.js";
+import * as splash from "../../vendor/pixelfx/src/fx/water/splash.js";
 import * as poisonArrow from "./poison/poison-arrow.js";
 import * as knight from "./characters/knight.js";
 import * as grass from "./tiles/grass.js";
@@ -45,4 +46,5 @@ export const CATALOG = {
   "melee/spin-slash": spinSlash,
   "nature/thorns": thorns,
   "poison/poison-arrow": poisonArrow,
+  "water/splash": splash,
 };
