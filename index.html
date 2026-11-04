@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pixel Game</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #14121a;
+        color: #c8c4d6;
+        font: 14px/1.4 ui-monospace, Consolas, monospace;
+      }
+      body {
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+        image-rendering: pixelated;
+        cursor: crosshair;
+      }
+      #hud {
+        position: fixed;
+        right: 0;
+        bottom: 8px;
+        left: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 0 8px;
+        font-size: 12px;
+        text-align: center;
+        text-shadow: 0 1px 2px #000, 0 0 3px #000;
+        pointer-events: none;
+      }
+      #skills {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 4px 14px;
+      }
+      kbd {
+        padding: 0 5px;
+        border: 1px solid #5b5566;
+        border-radius: 3px;
+        color: #fff;
+      }
+      button {
+        padding: 6px 12px;
+        border: 1px solid #5b5566;
+        border-radius: 4px;
+        background: #231f2e;
+        color: #fff;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #352e45;
+      }
+      #tile-button {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+      }
+      #fps {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        padding: 3px 8px;
+        border-radius: 4px;
+        background: #14121acc;
+        color: #fff;
+        font-size: 14px;
+        pointer-events: none;
+      }
+      #weather-button {
+        position: fixed;
+        top: 10px;
+        right: 96px;
+      }
+      #weather-panel {
+        position: fixed;
+        top: 48px;
+        right: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 230px;
+        padding: 10px 12px;
+        border: 1px solid #5b5566;
+        border-radius: 4px;
+        background: #1a1722ee;
+      }
+      #weather-panel[hidden] {
+        display: none;
+      }
+      #weather-panel h2 {
+        margin: 0;
+        font-size: 14px;
+        color: #fff;
+      }
+      #weather-panel p {
+        margin: 0;
+      }
+      #weather-panel label {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 2px;
+      }
+      #weather-panel input[type="range"] {
+        width: 100%;
+        margin: 0;
+      }
+      #tile-book {
+        position: fixed;
+        inset: 0;
+        padding: 16px 24px 48px;
+        overflow-y: auto;
+        background: #14121a;
+      }
+      #tile-book[hidden],
+      #tile-button[hidden] {
+        display: none;
+      }
+      #tile-book .title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      #tile-book h1 {
+        margin: 0;
+        font-size: 20px;
+      }
+      #tile-book h2 {
+        margin: 28px 0 4px;
+        font-size: 16px;
+        color: #fff;
+      }
+      #tile-book h3 {
+        margin: 14px 0 6px;
+        font-size: 14px;
+        color: #fff;
+      }
+      #tile-book p {
+        margin: 2px 0 8px;
+      }
+      #tile-book canvas {
+        cursor: default;
+      }
+      #tile-book .swatches {
+        display: flex;
+        gap: 2px;
+        margin-bottom: 8px;
+      }
+      #tile-book .swatches i {
+        width: 18px;
+        height: 18px;
+      }
+      #tile-book .kind {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      #tile-book .kind span {
+        width: 100px;
+      }
+      #tile-book .corners,
+      #tile-book .grids {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      #tile-book .card {
+        width: 390px;
+        max-width: 100%;
+      }
+      #tile-book .card h3 {
+        margin-top: 0;
+      }
+      #tile-book .strip {
+        margin-top: 8px;
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game"></div>
+    <div id="fps"></div>
+    <div id="hud">
+      <div id="skills"></div>
+      <div><kbd>WASD</kbd> hareket &nbsp; <kbd>Shift</kbd> koşu &nbsp; <kbd>Sol tık</kbd> saldırı &nbsp; <kbd>T</kbd> yük testi &nbsp; <kbd>K</kbd> +25 knight &nbsp; <span id="stats"></span></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
