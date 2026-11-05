@@ -168,4 +168,6 @@ export const BANK = [DIRT[0], DIRT[1], DIRT[2]];
 export const ROCK = ramp(["#231d24", "#3d3138", "#5a4a48", "#7a6658", "#9c8a70"]);
 
 /** The ground under water, from the shallows out. */
-export const BED = ramp(["#6f6a4e", "#3f5a5a", "#142c4c"]);
+export const BED = ramp(["#7d7558", "#5f6a58", "#3f5a5a", "#274660", "#142c4c"]); // the lake bed, from just under the surface to deep
+export const BED_WEED = ramp(["#2c4a3a", "#3a5f42"]);
+export const BED_STONE = ramp(["#2a3440", "#566260"]);

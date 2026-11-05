@@ -10,7 +10,7 @@ const OVERSCAN = 16; // px drawn past each edge of the view, so a picture a tick
 type Command =
   | { type: "spawn"; id: number; fx: string; options: Record<string, unknown> }
   | ({ type: "move"; id: number; x: number; y: number } & FxState)
-  | { type: "poke"; id: number; at: number[] }
+  | { type: "poke"; id: number; at: (number | string)[] }
   | { type: "stop"; id: number };
 
 /** What the game can tell a live character, besides where it is. */
@@ -27,7 +27,11 @@ interface Reply {
   count: number;
   active: boolean;
   cost: number;
-  bitmaps: ImageBitmap[] | null;
+  heaviest?: string;
+  heaviestCost?: number;
+  /** Each picture that has changed, and null for one that hasn't. */
+  bitmaps: (ImageBitmap | null)[] | null;
+  filled?: boolean[];
   ox: number;
   oy: number;
   anchor?: [number, number];
@@ -60,6 +64,8 @@ interface Slot {
   count: number;
   planned: number;
   cost: number;
+  ticks: number;
+  nextTick: number;
   ox: number;
   oy: number;
   drawnAt: [number, number] | null;
@@ -93,6 +99,8 @@ export class FxLayer {
   private readonly slots: Slot[];
   private nextId = 1;
   private clock = 0;
+  private sent = 0;
+  private heaviest = { name: "", ms: 0 };
 
   constructor(scene: Phaser.Scene, sizes: FxSizes) {
     const count = Phaser.Math.Clamp(navigator.hardwareConcurrency - SPARE_CORES, 1, MAX_WORKERS);
@@ -108,7 +116,7 @@ export class FxLayer {
     surfaces[0].image.setDepth(backDepth);
     surfaces[1].image.setDepth(frontDepth);
     surfaces[2].image.setDepth(frontDepth + 1).setBlendMode(Phaser.BlendModes.ADD);
-    const slot: Slot = { worker, surfaces, commands: [], moves: new Map(), dt: 0, busy: false, active: false, count: 0, planned: 0, cost: 0, ox: 0, oy: 0, drawnAt: null };
+    const slot: Slot = { worker, surfaces, commands: [], moves: new Map(), dt: 0, busy: false, active: false, count: 0, planned: 0, cost: 0, ticks: 0, nextTick: 0, ox: 0, oy: 0, drawnAt: null };
     worker.onmessage = ({ data }: MessageEvent<Reply>) => this.receive(slot, data);
     worker.postMessage({ type: "init", w, h, hasGas, worldW, worldH });
     return slot;
@@ -120,8 +128,16 @@ export class FxLayer {
     slot.count = reply.count;
     slot.planned = reply.count;
     slot.cost = reply.cost;
+    slot.ticks++;
+    if ((reply.heaviestCost ?? 0) > this.heaviest.ms) this.heaviest = { name: reply.heaviest ?? "", ms: reply.heaviestCost! };
     if (!reply.bitmaps) return;
-    reply.bitmaps.forEach((bitmap, i) => slot.surfaces[i].show(bitmap));
+    reply.bitmaps.forEach((bitmap, i) => {
+      // a picture with nothing on it costs the same to draw as a full one, so it isn't drawn
+      slot.surfaces[i].image.setVisible(!!reply.filled?.[i]);
+      if (!bitmap) return;
+      slot.surfaces[i].show(bitmap);
+      this.sent++;
+    });
     slot.ox = reply.ox;
     slot.oy = reply.oy;
     slot.drawnAt = reply.anchor ?? null;
@@ -134,6 +150,33 @@ export class FxLayer {
       worker.terminate();
       for (const { image } of surfaces) scene.textures.remove(image.texture.key);
     }
+  }
+
+  /** How often the workers kept up since this was last asked: the rate of the slowest of them, per second, over this many milliseconds. */
+  takePace(spent: number) {
+    const working = this.slots.filter((slot) => slot.active), slowest = working.length ? Math.min(...working.map((slot) => slot.ticks)) : 0;
+    for (const slot of this.slots) slot.ticks = 0;
+    return Math.round((slowest * 1000) / spent);
+  }
+
+  /** The costliest thing any worker did in one tick since this was last asked. */
+  takeHeaviest() {
+    const heaviest = this.heaviest;
+    this.heaviest = { name: "", ms: 0 };
+    return heaviest;
+  }
+
+  /** Pictures that have come from the workers since this was last asked. */
+  takeSent() {
+    const sent = this.sent;
+    this.sent = 0;
+    return sent;
+  }
+
+  /** The pictures being drawn now, and how many there are. */
+  get layers() {
+    const all = this.slots.flatMap((slot) => slot.surfaces);
+    return { shown: all.filter(({ image }) => image.visible).length, all: all.length };
   }
 
   /** Effects playing now, across all workers. */
@@ -194,7 +237,7 @@ export class FxLayer {
   }
 
   /** Something touches a live surface at this spot, this hard. */
-  poke(handle: FxHandle, ...at: number[]) {
+  poke(handle: FxHandle, ...at: (number | string)[]) {
     handle.slot.commands.push({ type: "poke", id: handle.id, at });
   }
 
@@ -204,17 +247,14 @@ export class FxLayer {
 
   update(dt: number, viewX: number, viewY: number, hero: { x: number; y: number }, weather: object) {
     this.clock += dt;
-    for (const slot of this.slots) slot.dt += dt;
-    if (this.clock < TICK) return;
-    this.clock %= TICK;
     const ox = Math.floor(viewX) - OVERSCAN, oy = Math.floor(viewY) - OVERSCAN;
     for (const slot of this.slots) {
+      slot.dt += dt;
       const idle = !slot.active && !slot.commands.length && !slot.moves.size && !slot.planned;
-      // a worker still busy just skips this tick, and catches up with a longer one
-      if (slot.busy || idle) {
-        if (idle) slot.dt = 0;
-        continue;
-      }
+      if (idle) slot.dt = 0;
+      if (idle || slot.busy || this.clock < slot.nextTick) continue;
+      // each worker goes again as soon as it's due and free: one that runs a little late loses a little, not a whole tick
+      slot.nextTick = Math.max(slot.nextTick + TICK, this.clock);
       slot.busy = true;
       const anchor = slot === this.hero ? [Math.round(hero.x), Math.round(hero.y)] : undefined;
       slot.worker.postMessage({ type: "tick", dt: Math.min(slot.dt, MAX_DT), commands: [...slot.commands, ...slot.moves.values()], ox, oy, anchor, weather });

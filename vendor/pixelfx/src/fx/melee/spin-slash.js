@@ -1,6 +1,6 @@
 // The crescent shading, cooling ramp, dotted trace, glint and spark recipe is adapted from Sprite Fusion's
 // open-source slash (https://www.spritefusion.com/pixel-art-vfx/slash), MIT License, Copyright (c) 2026 Hugo Duprez.
-import { Particles, Lights, P, PF, Rng, fit, sparkle, clamp, smooth, ease, rand, TAU, WHITE, READY } from "../../core/index.js";
+import { Particles, Lights, P, PF, Rng, fit, sparkle, clamp, smooth, ease, rand, TAU, WHITE, READY, FLOOR_SLANT } from "../../core/index.js";
 import { swing, onSwing, travel, smear, trace, glowAlong } from "./_lib.js";
 
 export const meta = {
@@ -53,7 +53,7 @@ export function create(o) {
   const C = fit(o.palette, 7), n = C.length, Rg = new Rng(o.seed), R0 = o.radius;
   const ps = new Particles({ rng: Rg, ground: () => 0, sparks: o.sparks }), lights = new Lights();
   // the spin starts front-right, goes up the right side, behind the body, down the left and back across the front
-  const A = swing({ cx: 0, cy: -17, R: R0, sy: 0.27, rot: -0.1, a0: 0.5, dir: -1, k: 0.15 });
+  const A = swing({ cx: 0, cy: -17, R: R0, sy: FLOOR_SLANT, rot: -0.1, a0: 0.5, dir: -1, k: 0.15 });
   // a thinner echo just inside, a beat behind
   const E = { ...A, R: R0 * 0.8, k: 0.1 };
   const W = 16, WE = 5;

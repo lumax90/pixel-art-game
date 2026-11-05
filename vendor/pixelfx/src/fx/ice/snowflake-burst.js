@@ -1,7 +1,7 @@
 // The pop recipe (a gathering, a white flash with a ring and flares, twinkling motes that linger and fade) is
 // adapted from Sprite Fusion's open-source sparkle (https://www.spritefusion.com/pixel-art-vfx/sparkle),
 // MIT License, Copyright (c) 2026 Hugo Duprez.
-import { Particles, Lights, P, Rng, fit, flare, sparkle, clamp, smooth, seg, ease, TAU, WHITE } from "../../core/index.js";
+import { Particles, Lights, P, Rng, fit, band, flare, sparkle, clamp, smooth, seg, ease, TAU, WHITE, FLOOR_SLANT } from "../../core/index.js";
 import { flakeDesign, snowflake, endBy } from "./_lib.js";
 
 export const meta = {
@@ -17,7 +17,7 @@ export const meta = {
   options: { palette: ["#151a3d", "#212f6b", "#2c58aa", "#3a8bd8", "#62c8f4", "#a6ecff", "#dcfbff", "#ffffff"], count: 9, seed: 8 },
 };
 
-const POP = 0.16, CY = -48;
+const POP = 0.16, CY = -14, SY = FLOOR_SLANT, SETTLES_AFTER = 0.35;
 
 export function create(o) {
   const C = fit(o.palette, 8), R = new Rng(o.seed), floor = () => 0;
@@ -31,7 +31,7 @@ export function create(o) {
     const a = (i / o.count) * TAU + R.range(-0.3, 0.3) + 0.4, sp = R.range(80, 120) * (1.4 - r / 14);
     flakes.push({
       x: 0, y: CY, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.85 - 20, r, rot: R.range(0, TAU), w0: R.sign() * R.range(7, 12), w1: R.sign() * R.range(0.4, 1),
-      d: flakeDesign(R), life: R.range(2.1, 2.8), age: 0, ph: R.range(0, TAU), tw: R.range(0.5, 0.85), tw0: R.range(0.15, 0.6), rest: false, popped: false,
+      d: flakeDesign(R), ground: Math.sin(a) * R.range(10, 36) * SY, life: R.range(2.1, 2.8), age: 0, ph: R.range(0, TAU), tw: R.range(0.5, 0.85), tw0: R.range(0.15, 0.6), rest: false, popped: false,
     });
   }
   let t = 0, popped = false;
@@ -74,9 +74,8 @@ export function create(o) {
             f.y += f.vy * dt;
             f.rot += (f.w1 + (f.w0 - f.w1) * Math.exp(-f.age * 2.5)) * dt;
             // it settles on the floor, flat and still, and melts there
-            if (f.y > -sz(f) * 0.3) {
+            if (f.age > SETTLES_AFTER && f.vy > 0 && f.y > f.ground - sz(f) * 0.3) {
               f.rest = true;
-              f.y = -1;
               f.life = Math.min(f.life, f.age + 0.6);
             }
           }
@@ -103,8 +102,8 @@ export function create(o) {
         if (q < 0.07) p.circle(0, CY, 6 * (1 - q / 0.07) + 1, WHITE);
         flare(p, 0, CY, 28 * Math.pow(Math.max(0, 1 - q / 0.26), 1.5), 1 - q / 0.26, C);
         const e = ease.outCubic(q / 0.4), r = 5 + 34 * e;
-        p.ring(0, CY, r, Math.max(1, 2.4 * (1 - e)), q < 0.08 ? WHITE : q < 0.2 ? C[6] : C[5], 1.15 - e);
-        p.glowRing(0, CY, r, 5, C[5], 0.4 * (1 - e));
+        band(p, 0, 0, r, SY, Math.max(1, 2.4 * (1 - e)), 1.15 - e, [C[4], C[5], C[6], q < 0.08 ? WHITE : C[6]]);
+        p.glow(0, -2, r, C[5], 0.3 * (1 - e));
       }
       // the cold light left where it burst, fading
       if (popped) p.glow(0, CY, 46, C[4], 0.3 * (1 - smooth(POP, POP + 1.6, t)));
@@ -115,8 +114,8 @@ export function create(o) {
         if (f.rest) {
           // lying on the floor: flattened to a sparkling smear that shrinks away
           const L = Math.max(1, Math.round(r * 1.2 * ((f.life - f.age) / 0.6)));
-          for (let i = -L; i <= L; i++) p.px(f.x + i, -1, Math.abs(i) === L ? C[5] : i === 0 ? WHITE : C[6]);
-          p.glow(f.x, -1, 3 + L, C[4], 0.3);
+          for (let i = -L; i <= L; i++) p.px(f.x + i, f.y, Math.abs(i) === L ? C[5] : i === 0 ? WHITE : C[6]);
+          p.glow(f.x, f.y, 3 + L, C[4], 0.3);
           continue;
         }
         snowflake(p, f.x, f.y, r, f.rot, f.d, C, { hot: Math.max(tw, 1 - clamp(f.age / 0.12)) });

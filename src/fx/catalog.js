@@ -16,6 +16,7 @@ import * as spinSlash from "../../vendor/pixelfx/src/fx/melee/spin-slash.js";
 import * as thorns from "../../vendor/pixelfx/src/fx/nature/thorns.js";
 import * as splash from "../../vendor/pixelfx/src/fx/water/splash.js";
 import * as poisonArrow from "./poison/poison-arrow.js";
+import * as footprints from "./tiles/footprints.js";
 import * as knight from "./characters/knight.js";
 import * as grass from "./tiles/grass.js";
 import * as water from "./tiles/water.js";
@@ -46,5 +47,6 @@ export const CATALOG = {
   "melee/spin-slash": spinSlash,
   "nature/thorns": thorns,
   "poison/poison-arrow": poisonArrow,
+  "tiles/footprints": footprints,
   "water/splash": splash,
 };

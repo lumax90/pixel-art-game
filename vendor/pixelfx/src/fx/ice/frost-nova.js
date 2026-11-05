@@ -1,4 +1,4 @@
-import { Particles, Bits, Lights, P, B, Rng, fit, crystal, band, flare, clamp, smooth, ease, rand, TAU, WHITE, READY } from "../../core/index.js";
+import { Particles, Bits, Lights, P, B, Rng, fit, crystal, band, flare, clamp, smooth, ease, rand, TAU, WHITE, READY, FLOOR_SLANT } from "../../core/index.js";
 
 export const meta = {
   name: "Frost nova",
@@ -37,28 +37,29 @@ export const act = {
   dust: [{ t: 0.42, x: 10, n: 5, dir: 1, c: "#d8f2ff" }, { t: 0.42, x: -10, n: 5, dir: -1, c: "#d8f2ff" }],
 };
 
-const CHARGE = 0.42, SPREAD = 0.62, HOLD = 1.95, MELT = 0.7, CORE_Y = -24;
+const CHARGE = 0.42, SPREAD = 0.62, HOLD = 1.95, MELT = 0.7, CORE_Y = -24, SY = FLOOR_SLANT;
 // three rings of crystals: tall ones hugging the caster, smaller ones further out
 const RINGS = [
-  { q: [0.15, 0.24], h: [24, 32], w: [10, 13], n: 2, kids: 2 },
-  { q: [0.36, 0.52], h: [13, 19], w: [7, 9], n: 3, kids: 1 },
-  { q: [0.62, 0.9], h: [5, 10], w: [4, 6], n: 4, kids: 0 },
+  { q: [0.17, 0.26], h: [24, 32], w: [10, 13], n: 6, kids: 2 },
+  { q: [0.42, 0.56], h: [13, 19], w: [7, 9], n: 10, kids: 1 },
+  { q: [0.68, 0.92], h: [5, 10], w: [4, 6], n: 15, kids: 0 },
 ];
 
-// frost on the floor: a white crust, little tufts, a dithered bloom under the surface
-function frost(p, C, x0, x1, reach, a, edge) {
-  for (let x = Math.floor(x0); x <= Math.ceil(x1); x++) {
-    const d = Math.abs(x + 0.5), q = d / reach, k = clamp((a * 1.15 - q) / 0.15);
-    if (k <= 0) continue;
-    const h = rand(x, 17), fresh = edge > 0 && d > edge - 3, tuft = h < 0.45 ? Math.round((1 + rand(x, 5) * 3) * (1 - q * 0.6)) : 0, D = (4 + rand(x, 11) * 4) * (1 - q * 0.5);
-    p.dot(x, 0, fresh || h < 0.25 ? WHITE : C[6], k);
-    for (let j = 1; j <= tuft; j++) p.dot(x, -j, j === tuft ? WHITE : C[5], k);
-    if (tuft > 1 && rand(x, 9) < 0.5) p.dot(x + (rand(x, 3) < 0.5 ? -1 : 1), -tuft + 1, C[6], k);
-    for (let j = 1; j <= D; j++) {
-      const v = j / D;
-      p.dot(x, j, rand(x * 31 + j, 7) < 0.06 ? WHITE : v < 0.25 ? C[6] : v < 0.55 ? C[5] : C[4], k * (1.1 - v) * (fresh ? 1.3 : 1));
+// frost on the floor, an oval as far as the wave has come: a pale sheet with white crystals in it, little tufts, and a white edge
+function frost(p, C, reach, a, edge) {
+  const across = Math.ceil(edge) + 1, deep = Math.ceil(edge * SY) + 1;
+  for (let y = -deep; y <= deep; y++)
+    for (let x = -across; x <= across; x++) {
+      const d = Math.hypot(x + 0.5, (y + 0.5) / SY), q = d / reach, k = clamp((a * 1.15 - q) / 0.15);
+      if (d > edge || k <= 0) continue;
+      const h = rand(x, y, 17);
+      if (d > edge - 2.5 && edge < reach - 1) p.dot(x, y, h < 0.5 ? WHITE : C[6], k);
+      else if (h < 0.035) {
+        p.dot(x, y, WHITE, k);
+        p.dot(x, y - 1, C[6], k);
+      } else if (h < 0.14) p.dot(x, y, C[6], k);
+      else p.blend(x, y, h < 0.55 ? C[5] : C[4], k * (0.5 - q * 0.22));
     }
-  }
 }
 
 // the snowflake the cold gathers into: six arms with side branches, spinning, pulsing
@@ -84,20 +85,26 @@ export function create(o) {
   const bits = new Bits({ ground: floor }), lights = new Lights();
   const front = (t) => (t < CHARGE ? 0 : REACH * (1 - Math.pow(1 - clamp((t - CHARGE) / SPREAD), 3)));
   const reachedAt = (d) => CHARGE + SPREAD * (1 - Math.cbrt(1 - Math.min(1, d / REACH)));
-  // lay out the crystals: both sides, three rings, alternating back and front rows
+  // lay out the crystals: three rings all the way round, those on the far side behind the caster
   const sites = [];
-  for (const side of [-1, 1])
-    RINGS.forEach((ring, ri) => {
-      for (let i = 0; i < ring.n; i++) {
-        const q = ring.q[0] + ((ring.q[1] - ring.q[0]) * (i + R.range(0.2, 0.8))) / ring.n, h = R.range(...ring.h), w = R.range(...ring.w);
-        const parts = [{ dx: 0, h, w, lean: side * h * R.range(0.1, 0.28) }];
-        for (let k = 0; k < ring.kids; k++) {
-          const s = k % 2 ? -side : side, kh = h * R.range(0.4, 0.62);
-          parts.unshift({ dx: s * R.range(0.3, 0.5) * w, h: kh, w: w * 0.62, lean: s * kh * R.range(0.35, 0.6) });
-        }
-        sites.push({ x: side * q * REACH, d: q * REACH, h, back: (i + ri + (side > 0 ? 1 : 0)) % 2 === 1, t0: reachedAt(q * REACH) + R.range(0, 0.03), up: false, parts, phase: R.next() });
+  RINGS.forEach((ring) => {
+    for (let i = 0; i < ring.n; i++) {
+      const a = ((i + R.range(0.2, 0.8)) / ring.n) * TAU, q = R.range(...ring.q), h = R.range(...ring.h), w = R.range(...ring.w), side = Math.cos(a) < 0 ? -1 : 1, out = Math.cos(a);
+      const parts = [{ dx: 0, h, w, lean: out * h * R.range(0.1, 0.28) }];
+      for (let k = 0; k < ring.kids; k++) {
+        const s = k % 2 ? -side : side, kh = h * R.range(0.4, 0.62);
+        parts.unshift({ dx: s * R.range(0.3, 0.5) * w, h: kh, w: w * 0.62, lean: s * kh * R.range(0.35, 0.6) });
       }
-    });
+      const x = Math.cos(a) * q * REACH, y = Math.sin(a) * q * REACH * SY;
+      sites.push({ x, y, d: q * REACH, h, back: y < 0, t0: reachedAt(q * REACH) + R.range(0, 0.03), up: false, parts, phase: R.next() });
+    }
+  });
+  sites.sort((a, b) => a.y - b.y);
+  // a place on the floor, somewhere round the wave or inside it
+  const onFloor = (reach) => {
+    const a = R.range(0, TAU), d = reach * Math.sqrt(R.next());
+    return [Math.cos(a) * d, Math.sin(a) * d * SY];
+  };
   let t = 0, released = false;
   const sink = (tt) => smooth(HOLD, HOLD + MELT, tt);
 
@@ -107,15 +114,15 @@ export function create(o) {
       if (!s.up || s.back !== back || m >= 1) continue;
       const g = ease.outBack(clamp((t - s.t0) / 0.1), 2.6), white = t < s.t0 + 0.03, sw = (((t - s.t0) * 0.7 + s.phase * 3) % 1.6) / 0.5;
       for (const q of s.parts)
-        crystal(p, s.x + q.dx, back ? -1 : 0, q.h * g * (1 - m), q.w * (1 - m * 0.3), q.lean * g * (1 - m), back ? DIM : C, { white, glint: sw <= 1 ? sw : -1 });
+        crystal(p, s.x + q.dx, s.y, q.h * g * (1 - m), q.w * (1 - m * 0.3), q.lean * g * (1 - m), back ? DIM : C, { white, glint: sw <= 1 ? sw : -1 });
     }
   };
   const ring = (p, back) => {
     if (t < CHARGE) return;
     const u = clamp((t - CHARGE) / (SPREAD + 0.15));
     if (u >= 1) return;
-    band(p, 0, 0, front(t) + 2, 0.16, Math.max(2, 10 * Math.pow(1 - u, 0.7)), u < 0.75 ? 1 : (1 - u) / 0.25, C, (g) => Math.sin(g) < 0 === back, t - CHARGE < 0.1);
-    if (!back) for (const s of [-1, 1]) p.glow(s * (front(t) + 2), -2, 22, C[5], 0.55 * (1 - u));
+    band(p, 0, 0, front(t) + 2, SY, Math.max(2, 10 * Math.pow(1 - u, 0.7)), u < 0.75 ? 1 : (1 - u) / 0.25, C, (g) => Math.sin(g) < 0 === back, t - CHARGE < 0.1);
+    if (!back) for (let i = 0; i < 8; i++) p.glow(Math.cos((i / 8) * TAU) * (front(t) + 2), Math.sin((i / 8) * TAU) * (front(t) + 2) * SY - 2, 16, C[5], 0.28 * (1 - u));
   };
 
   return {
@@ -128,9 +135,9 @@ export function create(o) {
           const x = Math.cos(a) * D, y = Math.min(CORE_Y + Math.sin(a) * D * 0.8, -2), l = Math.hypot(x, y - CORE_Y) || 1;
           ps.spawn(P.STREAK, x, y, (-x / l) * v, ((CORE_Y - y) / l) * v, T, R.chance(0.5) ? C[6] : C[5]);
         }
-        if (R.chance(0.14)) {
-          const s = R.sign();
-          ps.spawn(P.VAPOUR, s * R.range(28, 60), -R.range(0, 2), -s * R.range(35, 70), -R.range(0, 3), R.range(0.35, 0.5), C[6], R.range(2, 3));
+        if (R.chance(0.2)) {
+          const a = R.range(0, TAU), d = R.range(28, 60), x = Math.cos(a) * d, y = Math.sin(a) * d * SY, v = R.range(35, 70);
+          ps.spawn(P.VAPOUR, x, y, -Math.cos(a) * v, -Math.sin(a) * v * SY, R.range(0.35, 0.5), C[6], R.range(2, 3), 0, 0, y);
         }
       }
       if (t >= CHARGE && !released) {
@@ -148,9 +155,10 @@ export function create(o) {
       }
       const fr = front(t);
       if (t > CHARGE && t < CHARGE + SPREAD)
-        for (const s of [-1, 1]) {
-          ps.spawn(P.VAPOUR, s * fr + R.range(-2, 2), -R.range(0, 5), s * R.range(15, 75), -R.range(2, 15), R.range(0.6, 1), R.chance(0.7) ? C[6] : C[5], R.range(3, 5.5) * (1 - 0.4 * (fr / REACH)));
-          if (R.chance(0.45)) ps.spawn(P.FLAKE, s * fr, -2, s * R.range(10, 45), -R.range(30, 85), R.range(1.1, 1.9), R.chance(0.5) ? WHITE : C[6], R.range(0.5, 1.2));
+        for (let i = 0; i < 4; i++) {
+          const a = R.range(0, TAU), x = Math.cos(a) * fr, y = Math.sin(a) * fr * SY, out = R.range(15, 75);
+          ps.spawn(P.VAPOUR, x + R.range(-2, 2), y - R.range(0, 5), Math.cos(a) * out, Math.sin(a) * out * SY - R.range(2, 15), R.range(0.6, 1), R.chance(0.7) ? C[6] : C[5], R.range(3, 5.5) * (1 - 0.4 * (fr / REACH)), 0, 0, y);
+          if (R.chance(0.25)) ps.spawn(P.FLAKE, x, y - 2, Math.cos(a) * R.range(10, 45), -R.range(30, 85), R.range(1.1, 1.9), R.chance(0.5) ? WHITE : C[6], R.range(0.5, 1.2), 0, 0, y);
         }
       for (const s of sites) {
         if (!s.up && t >= s.t0) {
@@ -158,27 +166,33 @@ export function create(o) {
           // each crystal punches up with a spray of shards, a puff and a glint
           for (let i = 0; i < 2 + Math.round(s.h / 8); i++) {
             const a = -Math.PI / 2 + R.range(-1.3, 1.3), sp = R.range(60, 200) * (0.5 + s.h / 40);
-            bits.add({ kind: B.SHARD, x: s.x + R.range(-3, 3), y: 0, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.8, drag: 0.6, bounce: 0.3, life: R.range(0.9, 1.6), a: R.range(0, TAU), va: R.range(-18, 18), s: R.range(1.5, 3), c: R.pick([C[7], C[6], C[5]]) });
+            bits.add({ kind: B.SHARD, x: s.x + R.range(-3, 3), y: s.y, base: s.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.8, drag: 0.6, bounce: 0.3, life: R.range(0.9, 1.6), a: R.range(0, TAU), va: R.range(-18, 18), s: R.range(1.5, 3), c: R.pick([C[7], C[6], C[5]]) });
           }
-          ps.spawn(P.VAPOUR, s.x, -1, R.range(-30, 30), -R.range(2, 8), R.range(0.5, 0.9), C[6], R.range(2.5, 4));
-          if (s.h > 10) ps.spawn(P.STAR, s.x + R.range(-3, 3), -R.range(4, s.h * 0.8), 0, -3, R.range(0.3, 0.6), C[6], R.range(1, 2.4));
+          ps.spawn(P.VAPOUR, s.x, s.y - 1, R.range(-30, 30), -R.range(2, 8), R.range(0.5, 0.9), C[6], R.range(2.5, 4), 0, 0, s.y);
+          if (s.h > 10) ps.spawn(P.STAR, s.x + R.range(-3, 3), s.y - R.range(4, s.h * 0.8), 0, -3, R.range(0.3, 0.6), C[6], R.range(1, 2.4));
         }
       }
       // while it holds: glints run over the crystals, snow drifts down
       if (t > CHARGE + 0.2 && t < HOLD + 0.2) {
         if (R.chance(0.5)) {
           const s = R.pick(sites);
-          if (s.up) ps.spawn(P.STAR, s.x + R.range(-3, 3), -R.range(2, s.h * 0.9), 0, -3, R.range(0.3, 0.6), R.chance(0.6) ? C[6] : WHITE, R.range(0.6, 2.2));
+          if (s.up) ps.spawn(P.STAR, s.x + R.range(-3, 3), s.y - R.range(2, s.h * 0.9), 0, -3, R.range(0.3, 0.6), R.chance(0.6) ? C[6] : WHITE, R.range(0.6, 2.2));
         }
-        if (t < HOLD - 0.3 && R.chance(0.16)) ps.spawn(P.FLAKE, R.range(-1, 1) * fr, -R.range(40, 90), R.range(-5, 5), R.range(3, 10), R.range(1.1, 1.5), R.chance(0.5) ? WHITE : C[6], R.range(0.5, 1.4));
+        if (t < HOLD - 0.3 && R.chance(0.16)) {
+          const [x, y] = onFloor(fr);
+          ps.spawn(P.FLAKE, x, y - R.range(40, 90), R.range(-5, 5), R.range(3, 10), R.range(1.1, 1.5), R.chance(0.5) ? WHITE : C[6], R.range(0.5, 1.4), 0, 0, y);
+        }
       }
       // melting: drips run off the crystals, vapour lifts off the floor
       if (t > HOLD && t < HOLD + MELT) {
         if (R.chance(0.5)) {
           const s = R.pick(sites);
-          bits.add({ kind: B.DRIP, x: s.x + R.range(-3, 3), y: -R.range(3, s.h * 0.6 * (1 - sink(t))), vy: 10, g: 0.6, life: 1, c: C[5] });
+          bits.add({ kind: B.DRIP, x: s.x + R.range(-3, 3), y: s.y - R.range(3, s.h * 0.6 * (1 - sink(t))), base: s.y, vy: 10, g: 0.6, life: 1, c: C[5] });
         }
-        if (R.chance(0.25)) ps.spawn(P.VAPOUR, R.range(-1, 1) * REACH * 0.8, -R.range(0, 3), R.range(-10, 10), -R.range(6, 16), R.range(0.6, 1), C[5], R.range(3, 5));
+        if (R.chance(0.35)) {
+          const [x, y] = onFloor(REACH * 0.85);
+          ps.spawn(P.VAPOUR, x, y - R.range(0, 3), R.range(-10, 10), -R.range(6, 16), R.range(0.6, 1), C[5], R.range(3, 5), 0, 0, y);
+        }
       }
       ps.update(dt);
       bits.update(dt);
@@ -186,7 +200,7 @@ export function create(o) {
     },
     drawBack(p) {
       const out = 1 - smooth(HOLD + 0.2, HOLD + MELT + 0.6, t), fr = front(t);
-      if (out > 0 && t > CHARGE) frost(p, C, -Math.max(12, fr + 1), Math.max(12, fr + 1), REACH, out, fr);
+      if (out > 0 && t > CHARGE) frost(p, C, REACH, out, fr);
       ring(p, true);
       drawCrystals(p, true);
       ps.draw(p, "back");
@@ -205,7 +219,7 @@ export function create(o) {
       // the frosted floor gives off a cold light while the ice stands
       if (t > CHARGE) {
         const k = (1 - smooth(HOLD, HOLD + MELT + 0.3, t)) * (0.85 + 0.15 * Math.sin(t * 2.4)), fr = front(t);
-        for (let i = -3; i <= 3; i++) p.glow((i / 3.5) * fr, -4, 26, C[4], 0.16 * k);
+        for (let i = 0; i < 8; i++) p.glow(Math.cos((i / 8) * TAU) * fr * 0.7, Math.sin((i / 8) * TAU) * fr * 0.7 * SY - 3, 26, C[4], 0.12 * k);
       }
       bits.draw(p);
       ps.draw(p, "front");

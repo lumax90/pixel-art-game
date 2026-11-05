@@ -2,8 +2,11 @@
 // middle of the cells and wanders with the noise, so no tile edge shows. Each pixel then takes its group's color and whatever
 // mark its tile's variant has there.
 import { clamp, fbm, rand } from "../../vendor/pixelfx/src/core/index.js";
-import { BANK, BED, GRASSES, GROUPS, ROCK, TILE } from "./groups.js";
+import { BANK, BED, BED_STONE, BED_WEED, GRASSES, GROUPS, ROCK, TILE } from "./groups.js";
 
+const SHORE_SHELF = 4; // px of plain shelf at the shore before the bed starts to rise and fall
+const MOUNDS = 90; // how much the bed rises under the water in places, in px of depth
+const BED_STEP = 7; // px of depth to a step of the bed's color
 const WANDER = 0.62; // how far a border strays from straight
 const COBBLE = 15; // px between the middles of laid stones
 const WATER_REACH = 170; // px from water that the ground is still damp
@@ -44,6 +47,14 @@ function layOut(rows, width, height, seed) {
       terrain[y * width + x] = found;
     }
   return { terrain, cell };
+}
+
+/** The land under the water: sand and silt going dark with depth, a little lit where it rises, with weed and stones on it. */
+function bedColor(depth, x, y, seed) {
+  const patch = fbm(x / 8, y / 5, seed + 13, 2), rise = fbm((x - 3) / 26, (y - 3) / 15, seed + 12, 2) - fbm(x / 26, y / 15, seed + 12, 2), speck = rand(x, y, seed + 14);
+  if (depth > 6 && fbm(x / 6, y / 4, seed + 15, 2) > 0.28) return BED_WEED[speck < 0.3 ? 1 : 0];
+  if (rand(x >> 2, y >> 1, seed + 16) < 0.012) return BED_STONE[y & 1];
+  return BED[clamp(Math.round(depth / BED_STEP + patch * 1.6 + rise * 8), 0, BED.length - 1)];
 }
 
 /** How many pixels each water pixel is from land, as far as SHORE. */
@@ -262,9 +273,10 @@ export function paintGround(rows, seed, width, height, levels = /** @type {strin
     for (let x = 0; x < width; x++) {
       const i = y * width + x, g = terrain[i], group = GROUPS[g];
       if (group.active) {
+        if (shore[i] >= SHORE_SHELF) shore[i] = Math.max(SHORE_SHELF, shore[i] - Math.max(0, fbm(x / 26, y / 15, seed + 12, 2)) * MOUNDS);
         water.push(x, y, Math.min(shore[i], SHORE));
         // the bed under the water: it shows through at the edge, where the water is thin
-        pixels[i] = BED[shore[i] < 5 ? 0 : shore[i] < 11 ? 1 : 2];
+        pixels[i] = bedColor(shore[i], x, y, seed);
         continue;
       }
       const patch = patchAt[i], C = group.ramp, step = patch > 0.16 ? 2 : patch < -0.16 ? 0 : 1;

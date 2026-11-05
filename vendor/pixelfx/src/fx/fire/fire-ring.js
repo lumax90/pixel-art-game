@@ -1,7 +1,7 @@
 // The flame-puff, smoke and spark recipe and the floor ring are adapted from Sprite Fusion's open-source explosion
 // (https://www.spritefusion.com/pixel-art-vfx/explosion), and the tongue from its fire
 // (https://www.spritefusion.com/pixel-art-vfx/fire), MIT License, Copyright (c) 2026 Hugo Duprez.
-import { Particles, Lights, P, PF, Rng, fit, band, clamp, smooth, ease, noise, rand, TAU, WHITE, hex, mix, rgb, READY } from "../../core/index.js";
+import { Particles, Lights, P, PF, Rng, fit, band, clamp, smooth, ease, noise, rand, TAU, WHITE, hex, mix, rgb, READY, FLOOR_SLANT } from "../../core/index.js";
 import { hotFirst, flameTongue, simDraw, LAYERS, BACK_LAYERS } from "./_lib.js";
 
 export const meta = {
@@ -45,7 +45,7 @@ export const act = {
   dust: [{ t: 0.32, x: 10, n: 6, dir: 1 }, { t: 0.32, x: -10, n: 6, dir: -1 }],
 };
 
-const SY = 0.2, CHARGE = 0.32, SPREAD = 0.75, SOOT = hex("#0d0a12"), SOOT2 = hex("#17121d"), WARM = rgb(255, 176, 96);
+const SY = FLOOR_SLANT, CHARGE = 0.32, SPREAD = 0.75, SOOT = hex("#0d0a12"), SOOT2 = hex("#17121d"), WARM = rgb(255, 176, 96);
 // the dying flames: deep orange and red, no white heart
 const EMBER_LAYERS = [[1, 1, 7], [0.7, 0.8, 6], [0.4, 0.55, 5]];
 
@@ -121,7 +121,7 @@ export function create(o) {
         lights.add(0, -6, 30, WHITE, 0.8, 0.08);
         for (let i = 0; i < 40; i++) {
           const a = R.range(0, TAU), sp = R.range(80, 220);
-          ps.spawn(P.SPARK, Math.cos(a) * 3, -2, Math.cos(a) * sp, Math.sin(a) * sp * 0.4 - R.range(40, 120), R.range(0.2, 0.5));
+          ps.spawn(P.SPARK, Math.cos(a) * 3, -2, Math.cos(a) * sp, Math.sin(a) * sp * SY - R.range(40, 120), R.range(0.2, 0.5));
         }
       }
       // fire shed off the burning ring: puffs that rise and some cool into smoke, and embers
@@ -130,8 +130,8 @@ export function create(o) {
           if (!R.chance(0.75 * dt * 60)) continue;
           const s = R.pick(sites), age = t - s.t0;
           if (age < 0 || age > s.life * 0.7) continue;
-          ps.spawn(P.FIRE, s.x + R.range(-1, 1), s.y - s.h * 0.6, R.range(-5, 5), -R.range(20, 40), R.range(0.2, 0.4), 0, R.range(1.2, 2.4), 0, R.chance(0.5) ? PF.SMOKES | (s.back ? PF.BACK : 0) : s.back ? PF.BACK : 0);
-          if (R.chance(0.12)) ps.spawn(P.EMBER, s.x, s.y - s.h * 0.5, R.range(-15, 15), -R.range(30, 70), R.range(0.6, 1.3), H[3], 1, 0, s.back ? PF.BACK : 0);
+          ps.spawn(P.FIRE, s.x + R.range(-1, 1), s.y - s.h * 0.6, R.range(-5, 5), -R.range(20, 40), R.range(0.2, 0.4), 0, R.range(1.2, 2.4), 0, R.chance(0.5) ? PF.SMOKES | (s.back ? PF.BACK : 0) : s.back ? PF.BACK : 0, s.y);
+          if (R.chance(0.12)) ps.spawn(P.EMBER, s.x, s.y - s.h * 0.5, R.range(-15, 15), -R.range(30, 70), R.range(0.6, 1.3), H[3], 1, 0, s.back ? PF.BACK : 0, s.y);
         }
       ps.update(dt);
       lights.update(dt);

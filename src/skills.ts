@@ -37,6 +37,6 @@ export const SKILLS: Skill[] = [
   { name: "Buz halkası", kind: "self", fx: "ice/frost-nova", options: { scale: 0.7, ...ON_FLOOR }, lands: 100, world: { reach: 76, push: 0.8, frost: true } },
   { name: "Ateş halkası", kind: "self", fx: "fire/fire-ring", options: { scale: 0.7, ...ON_FLOOR }, lands: 300, world: { reach: 72, push: 1.2, burn: true } },
   { name: "Dönen kılıç", kind: "self", fx: "melee/spin-slash", options: { scale: 0.55, ...ON_FLOOR }, lands: 120, world: { reach: 54, push: 1.8 } },
-  { name: "Dikenler", kind: "aimed", fx: "nature/thorns", options: { scale: 0.7 } },
+  { name: "Dikenler", kind: "aimed", fx: "nature/thorns", options: { scale: 0.7, ...ON_FLOOR } },
   { name: "Zehirli ok", kind: "ground", fx: "poison/poison-arrow", gas: true, lands: 450 },
 ];

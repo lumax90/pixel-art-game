@@ -29,7 +29,8 @@ const GOLDEN = 0.618034; // steps round evenly, without a random number
 
 /** Turns what's thrown round the upright, so it flies off across the floor and not along one line. Its height is unchanged. */
 function fanOut(owner, b) {
-  b.slant = b.base = 0;
+  b.slant = 0;
+  b.base ??= 0; // how far from the effect's own floor this one's floor lies
   if (!floorView.slant) return b;
   owner.turns = ((owner.turns ?? 0) + GOLDEN) % 1;
   const turn = (owner.turns * 2 - 1) * FAN;
@@ -55,8 +56,8 @@ export class Particles {
     this.onLand = opts.onLand ?? null; // (x, y) when a BRAND hits the floor
   }
   /** delay: seconds before it appears; flag: PF bits. col 0 lets FIRE and SMOKE use their own ramps. */
-  spawn(k, x, y, vx, vy, life, col = WHITE, size = 1, delay = 0, flag = 0) {
-    this.list.push(fanOut(this, { k, x, y, vx, vy, life, max: life, col: col ? hex(col) : 0, size, seed: this.R.next() * 100, delay, flag }));
+  spawn(k, x, y, vx, vy, life, col = WHITE, size = 1, delay = 0, flag = 0, base = 0) {
+    this.list.push(fanOut(this, { k, x, y, vx, vy, life, max: life, col: col ? hex(col) : 0, size, seed: this.R.next() * 100, delay, flag, base }));
   }
   get count() {
     return this.list.length;

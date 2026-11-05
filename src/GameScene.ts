@@ -6,12 +6,18 @@ import { ON_FLOOR, SKILLS, type Skill } from "./skills";
 import { paintGround, tearGround, WALL } from "./tiles/ground.js";
 import { GROUPS } from "./tiles/groups.js";
 import { TEST_LEVELS, TEST_MAP } from "./tiles/test-map.js";
+import { createWaterShader } from "./tiles/water-shader";
 import { weather } from "./weather/weather.js";
 
 const GROUND_SEED = Number(new URLSearchParams(location.search).get("seed")) || 1;
 const START = { x: 144, y: 151 };
 const DUMMY_SPOT = { x: 326, y: 151 };
 const WATER = GROUPS.findIndex((group) => group.active);
+const STATS_EVERY_MS = 1000;
+const WALK_STEP = 14, RUN_STEP = 20; // px between one foot coming down and the other, as the knight's legs go
+const WET_STEPS = 8; // steps his boots stay wet after wading
+const MUD_NEAR_WATER = 18; // px of the shore that's soft
+const RAIN_MAKES_MUD = 0.15;
 const FEET_AHEAD = 6; // px ahead of his feet the ground is checked
 const SPLASH_SIZE = 0.6;
 const WADE_DEPTH = 12; // px out from the shore he can still stand
@@ -87,9 +93,15 @@ export class GameScene extends Phaser.Scene {
   private knight!: FxHandle;
   private grass!: FxHandle;
   private water!: FxHandle;
+  private prints!: FxHandle;
+  private stepLeft = WALK_STEP;
+  private foot = 1;
+  private wetSteps = 0;
+  private walkedFrom = { x: 0, y: 0 };
   private lantern!: Phaser.GameObjects.Light;
   private brazierLight!: Phaser.GameObjects.Light;
   private depth!: Uint8Array;
+  private moveWater!: ReturnType<typeof createWaterShader>;
   private dummy!: Phaser.Physics.Arcade.Sprite;
   private dim!: Phaser.GameObjects.Rectangle;
   private terrain!: Int8Array;
@@ -112,6 +124,10 @@ export class GameScene extends Phaser.Scene {
   private readyAt = new Map<Skill, number>();
   private seed = 1;
   private statsAt = 0;
+  private statsFrom = performance.now();
+  private frameAt = performance.now();
+  private frames = 0;
+  private worstFrame = 0;
   private worstCost = 0;
 
   private combatUntil = 0;
@@ -142,6 +158,7 @@ export class GameScene extends Phaser.Scene {
     this.dim = this.add.rectangle(0, 0, width, height, 0x04030a).setOrigin(0).setDepth(DIM_DEPTH).setAlpha(0);
     this.fx = new FxLayer(this, { viewW: width, viewH: height, worldW: width, worldH: height, backDepth: FX_BACK_DEPTH, frontDepth: FX_FRONT_DEPTH });
     this.water = this.fx.add("tiles/water", { x: START.x, y: START.y, pixels: waterPixels, pokes: [], seed: GROUND_SEED });
+    this.prints = this.fx.add("tiles/footprints", { x: START.x, y: START.y, pokes: [] }); // made before the grass, to lie under it
     this.grass = this.fx.add("tiles/grass", { pokes: [], x: START.x, y: START.y, blades });
     this.fx.add("fire/brazier", { x: BRAZIER.x, y: BRAZIER.y, seed: this.seed++ });
     this.lights.enable();
@@ -190,10 +207,11 @@ export class GameScene extends Phaser.Scene {
     this.changeSky();
     this.changeLight(time);
     this.healTears(time);
-    const hero = { x: this.player.x, y: this.feetY };
+    this.moveWater(dt, weather.air.wind);
+    const hero ={ x: this.player.x, y: this.feetY };
     this.fx.update(dt, 0, 0, hero, weather.air);
     this.fx.keepHeroAt(hero.x, hero.y);
-    this.showStats(time);
+    this.showStats();
   }
 
   /** Paints the tiles into one picture, and hands back the pixels that are water for the live water to work on. */
@@ -205,6 +223,7 @@ export class GameScene extends Phaser.Scene {
     canvas.getContext("2d")!.putImageData(this.groundColors, 0, 0);
     this.groundPicture = this.textures.addCanvas("ground", canvas)!;
     this.add.image(0, 0, "ground").setOrigin(0).setLighting(true);
+    this.moveWater = createWaterShader(this, water, GROUND_SEED, "ground", width, height);
     this.groundPixels = pixels;
     this.untouchedGround = pixels.slice();
     this.tears = [];
@@ -353,6 +372,29 @@ export class GameScene extends Phaser.Scene {
     this.fx.move(this.grass, this.player.x, feetY);
     this.fx.move(this.water, this.player.x, feetY);
     this.fx.heroDepth = feetY;
+    this.leavePrints(feetY);
+  }
+
+  /** Each time a foot comes down it marks the ground, by what the ground is there. */
+  private leavePrints(feetY: number) {
+    const { x } = this.player, dx = x - this.walkedFrom.x, dy = feetY - this.walkedFrom.y;
+    this.walkedFrom = { x, y: feetY };
+    this.stepLeft -= Math.hypot(dx, dy);
+    if (this.stepLeft > 0) return;
+    this.stepLeft = this.shift.isDown ? RUN_STEP : WALK_STEP;
+    this.foot = -this.foot;
+    const ground = this.printOn(x, feetY);
+    if (this.wetSteps) this.wetSteps--;
+    if (this.depthAt(x, feetY)) this.wetSteps = WET_STEPS;
+    else if (ground) this.fx.poke(this.prints, x, feetY, Math.atan2(dy / SY, dx), this.foot, ground);
+  }
+
+  private printOn(x: number, y: number) {
+    const id = GROUPS[this.at(this.terrain, x, y)]?.id;
+    if (id === "stone") return this.wetSteps ? "wet" : null;
+    const soft = this.wetSteps > 0 || weather.air.rain > RAIN_MAKES_MUD || [[-1, 0], [1, 0], [0, -1], [0, 1]].some(([a, b]) => this.depthAt(x + a * MUD_NEAR_WATER, y + b * MUD_NEAR_WATER));
+    if (id === "dirt") return soft ? "mud" : "dirt";
+    return id === "grass" ? (soft ? "mud" : "grass") : null;
   }
 
   private get feetY() {
@@ -432,7 +474,7 @@ export class GameScene extends Phaser.Scene {
       this.spawn(skill, skill.fx, x, y);
       this.strike(skill, x, y);
     }
-    else if (skill.kind === "aimed") this.spawn(skill, skill.fx, x, y, { angle: Math.atan2(worldY - y, worldX - x) });
+    else if (skill.kind === "aimed") this.spawn(skill, skill.fx, x, y, { aim: Math.atan2(worldY - y, worldX - x) });
     else this.launch(skill, x, y - HAND_HEIGHT, worldX, worldY);
   }
 
@@ -494,12 +536,22 @@ export class GameScene extends Phaser.Scene {
     list.innerHTML = SKILLS.map((skill, i) => `<span><kbd>${(i + 1) % 10}</kbd> ${skill.name}</span>`).join("");
   }
 
-  private showStats(time: number) {
+  /** Measured here from the clock, not read from the game loop, whose own figure is smoothed and hides a hitch. */
+  private showStats() {
+    const now = performance.now(), frame = now - this.frameAt;
+    this.frameAt = now;
+    this.frames++;
+    this.worstFrame = Math.max(this.worstFrame, frame);
     this.worstCost = Math.max(this.worstCost, this.fx.cost);
-    if (time < this.statsAt) return;
-    this.statsAt = time + 500;
-    document.getElementById("fps")!.textContent = `${Math.round(this.game.loop.actualFps)} FPS`;
-    document.getElementById("stats")!.textContent = `${this.fx.count} efekt · ${this.fx.workers} çekirdek · en yavaş çekirdek ${this.worstCost.toFixed(1)} ms`;
+    if (now < this.statsAt) return;
+    const spent = now - this.statsFrom;
+    document.getElementById("fps")!.textContent = `ekran ${Math.round((this.frames * 1000) / spent)} FPS · efekt ${this.fx.takePace(spent)} FPS · en kötü kare ${this.worstFrame.toFixed(1)} ms`;
+    this.statsFrom = now;
+    this.statsAt = now + STATS_EVERY_MS;
+    this.frames = 0;
+    this.worstFrame = 0;
+    const { shown, all } = this.fx.layers, heavy = this.fx.takeHeaviest();
+    document.getElementById("stats")!.textContent = `${this.fx.count} efekt · ${this.fx.workers} çekirdek · en yavaş çekirdek ${this.worstCost.toFixed(1)} ms · ${shown}/${all} katman · ${Math.round((this.fx.takeSent() * 1000) / spent)} resim/sn · en ağır ${heavy.name} ${heavy.ms.toFixed(1)} ms`;
     this.worstCost = 0;
   }
 }
