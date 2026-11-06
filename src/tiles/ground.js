@@ -2,17 +2,19 @@
 // middle of the cells and wanders with the noise, so no tile edge shows. Each pixel then takes its group's color and whatever
 // mark its tile's variant has there.
 import { clamp, fbm, rand } from "../../vendor/pixelfx/src/core/index.js";
-import { BANK, BED, BED_STONE, BED_WEED, GRASSES, GROUPS, ROCK, TILE } from "./groups.js";
+import { BANK, BED, BED_STONE, BED_WEED, CRAG, GRASSES, GROUPS, ROCK, TILE } from "./groups.js";
 
 const SHORE_SHELF = 4; // px of plain shelf at the shore before the bed starts to rise and fall
 const MOUNDS = 90; // how much the bed rises under the water in places, in px of depth
 const BED_STEP = 7; // px of depth to a step of the bed's color
 const WANDER = 0.62; // how far a border strays from straight
 const COBBLE = 15; // px between the middles of laid stones
+const CRAG_WIDE = 2.7, CRAG_TALL = 1.7; // how much bigger than a cobble a plane of rock is, across and up the screen
 const WATER_REACH = 170; // px from water that the ground is still damp
 const SHORE = 40; // px from land from which water counts as full depth
 const FLATTENS = 1.7; // the floor is seen at a slant, so a round hole looks flatter up and down the screen
-const FACE = 19; // px tall a cliff stands
+const FACE = 19; // px tall a cliff stands for each level it falls
+const MOST_DROP = 4; // levels past which a cliff grows no taller: the rest of the fall is out of sight
 const SHADOW = 7, SIDE_SHADOW = 5; // px of shade a cliff lays on the low ground below it, and to the side away from the sun
 const CREST = 4, CREST_LIGHT = 1.16, CREST_STOPS = 12; // px wide the lit crest of high ground is, how much it brightens, and how far short of a slope it stops
 const FOOT_SHADE = 3; // px of light shade round the foot of high ground
@@ -23,6 +25,16 @@ const SLOPE_SHADE = 0.5, SLOPE_DARK = 0.86; // how thick the shade lies at the t
 const TAPER = 26; // px either side of a slope over which a cliff sinks into the ground
 export const WALL = { EDGE: 1, FACE: 2 }; // what stops a walker: the rim of high ground, or the rock of a cliff
 const CLOD_SPREAD = 7, CLOD_CHANCE = 0.16; // px past a tear that clods are thrown, and how thickly they lie
+
+/** Noise too slow to work out for every pixel of a big map and too broad to need it: taken once for each 4 px square, when first asked for. */
+function coarse(width, height, noise) {
+  const cols = (width >> 2) + 2, cells = new Float32Array(cols * ((height >> 2) + 2)).fill(NaN);
+  return (x, y) => {
+    const i = (y >> 2) * cols + (x >> 2);
+    if (Number.isNaN(cells[i])) cells[i] = noise(x & ~3, y & ~3);
+    return cells[i];
+  };
+}
 
 const groupIndex = Object.fromEntries(GROUPS.map((group, i) => [group.char, i]));
 
@@ -36,6 +48,10 @@ function layOut(rows, width, height, seed) {
       const gx = (x - TILE / 2) / TILE, gy = (y - TILE / 2) / TILE, ix = Math.floor(gx), iy = Math.floor(gy), u = gx - ix, v = gy - iy;
       const a = cell(ix, iy), b = cell(ix + 1, iy), c = cell(ix, iy + 1), d = cell(ix + 1, iy + 1);
       let found = Math.min(a, b, c, d);
+      if (found === Math.max(a, b, c, d)) {
+        terrain[y * width + x] = found;
+        continue;
+      }
       const wander = fbm(x / 11, y / 11, seed, 3) * WANDER * 1.5;
       for (let g = found + 1; g <= Math.max(a, b, c, d); g++) {
         if (g !== a && g !== b && g !== c && g !== d) continue; // a group that isn't here can't turn up along the border
@@ -124,26 +140,72 @@ function cobbleColor(group, cobbles, x, y, seed) {
   return T[stone.tone > 0.68 ? 2 : stone.tone < 0.3 ? 0 : 1];
 }
 
-/** Which pixels are raised, with an edge that wanders a little as the tile borders do, and which belong to slopes. */
+/** Bare mountain rock: broad tilted planes, each lit by how it faces, split by broken cracks rather than joints. */
+function cragColor(group, crags, x, y, seed) {
+  const px = x / CRAG_WIDE, py = y / CRAG_TALL, { stone, gap } = crags(px, py), C = group.ramp, T = group.tones, reach = (COBBLE / 2) * stone.size, lit = -(((px - stone.x) / reach) * 0.62 + ((py - stone.y) / reach) * 0.78), speck = rand(x, y, seed + 70);
+  const mass = fbm(x / 30, y / 22, seed + 78, 3), strata = Math.sin((y + x * 0.42 + fbm(x / 26, y / 26, seed + 79, 2) * 26) * 0.62), face = lit * 0.75 + (stone.tone - 0.5) * 0.5 + mass * 1.4;
+  // cracks come and go, so no plane of rock is ever outlined all the way round as a cobble is
+  if (gap < 0.6 && fbm(x / 9, y / 9, seed + 71, 2) > 0.1) return C[0];
+  if (gap < 1.5 && lit > 0.38 && fbm(x / 9, y / 9, seed + 71, 2) > 0.1) return C[3];
+  if (strata > 0.965 && mass > -0.14) return C[1];
+  if (speck < 0.02) return C[1];
+  if (speck > 0.992) return C[3];
+  return face > 0.34 ? C[3] : face > 0.12 ? T[2] : face < -0.34 ? C[1] : face < -0.12 ? T[0] : T[1];
+}
+
+/** Snow the wind has been at: long drifts with blue shade between them, fine ripples on their backs, and a glint here and there. */
+function snowColor(group, x, y, seed) {
+  const C = group.ramp, T = group.tones, drift = fbm(x / 38, y / 19, seed + 72, 3), bend = fbm(x / 44, y / 22, seed + 73, 2) * 34, ripple = Math.sin((y + bend) * 0.72), speck = rand(x, y, seed + 74);
+  // ripples only in short runs: long unbroken ones read as the height lines of a map
+  const windy = fbm(x / 13, y / 7, seed + 80, 2) > 0.14;
+  if (speck < 0.004) return C[4];
+  if (drift < -0.2) return windy && ripple > 0.8 ? C[2] : T[0];
+  if (drift > 0.16 && windy && ripple > 0.86) return T[0];
+  return drift > 0.04 ? T[2] : T[1];
+}
+
+/** A glacier: blue ice in bands along its flow, split by crevasses that run dark at the heart and pale at the lip. */
+function iceColor(group, x, y, seed) {
+  const C = group.ramp, T = group.tones, split = Math.abs(fbm(x / 31, y / 13, seed + 75, 3)), band = fbm(x / 58, y / 9, seed + 76, 2), speck = rand(x, y, seed + 77);
+  if (split < 0.016) return C[0];
+  if (split < 0.03) return C[1];
+  if (split < 0.04) return C[4];
+  if (speck < 0.012) return C[4];
+  return band > 0.12 ? T[2] : band < -0.14 ? T[0] : T[1];
+}
+
+/**
+ * Which level each pixel is on, with edges that wander a little as the tile borders do, and which pixels belong to slopes.
+ * Levels are written as digits; ^ is 1 and . is 0. A slope is / on the bottom level, or a letter on any: a on 0, b on 1 and so on.
+ */
 function layHeights(levels, width, height, seed) {
-  const cols = levels[0].length, count = levels.length, at = (x, y) => levels[clamp(y, 0, count - 1)][clamp(x, 0, cols - 1)], high = (x, y) => (at(x, y) === "^" ? 1 : -1);
+  const cols = levels[0].length, count = levels.length, at = (x, y) => levels[clamp(y, 0, count - 1)][clamp(x, 0, cols - 1)], isSlope = (char) => char === "/" || (char >= "a" && char <= "z");
+  const number = (char) => (char === "^" ? 1 : char === "." || char === "/" ? 0 : isSlope(char) ? char.charCodeAt(0) - 97 : Number(char));
+  const cells = new Uint8Array(cols * count);
+  for (let y = 0; y < count; y++) for (let x = 0; x < cols; x++) cells[y * cols + x] = number(at(x, y));
+  const heightOf = (x, y) => cells[clamp(y, 0, count - 1) * cols + clamp(x, 0, cols - 1)];
   const raised = new Uint8Array(width * height), slopes = new Uint8Array(width * height);
   for (let y = 0; y < height; y++)
     for (let x = 0; x < width; x++) {
-      const gx = (x - TILE / 2) / TILE, gy = (y - TILE / 2) / TILE, ix = Math.floor(gx), iy = Math.floor(gy), u = gx - ix, v = gy - iy;
-      const blend = high(ix, iy) * (1 - u) * (1 - v) + high(ix + 1, iy) * u * (1 - v) + high(ix, iy + 1) * (1 - u) * v + high(ix + 1, iy + 1) * u * v;
-      raised[y * width + x] = blend + fbm(x / 9, y / 9, seed + 80, 2) * 0.5 > 0 ? 1 : 0;
-      slopes[y * width + x] = at(x >> 4, y >> 4) === "/" ? 1 : 0;
+      const gx = (x - TILE / 2) / TILE, gy = (y - TILE / 2) / TILE, ix = Math.floor(gx), iy = Math.floor(gy), u = gx - ix, v = gy - iy, a = heightOf(ix, iy), b = heightOf(ix + 1, iy), c = heightOf(ix, iy + 1), d = heightOf(ix + 1, iy + 1), top = Math.max(a, b, c, d);
+      let level = Math.min(a, b, c, d);
+      if (level !== top) {
+        const wander = fbm(x / 9, y / 9, seed + 80, 2) * 0.5, side = (corner, step) => (corner >= step ? 1 : -1);
+        for (let step = level + 1; step <= top; step++)
+          if (side(a, step) * (1 - u) * (1 - v) + side(b, step) * u * (1 - v) + side(c, step) * (1 - u) * v + side(d, step) * u * v + wander > 0) level = step;
+      }
+      raised[y * width + x] = level;
+      slopes[y * width + x] = isSlope(at(x >> 4, y >> 4)) ? 1 : 0;
     }
   return { raised, slopes };
 }
 
 /** Rough blocks of rock stood on end, lit from the left, in the light at the top of the cliff and in shade at its foot. */
-function rockColor(rocks, x, y, down, seed) {
+function rockColor(ramp, rocks, x, y, down, seed) {
   const { stone, gap } = rocks(x * 1.2, y * 0.6);
-  if (gap < 1 || down > 0.92) return ROCK[0];
+  if (gap < 1 || down > 0.92) return ramp[0];
   const lit = stone.x - x * 1.2 > 2 ? 1 : 0, speck = rand(x, y, seed + 91), step = (down < 0.3 ? 3 : down < 0.7 ? 2 : 1) + lit - (stone.tone < 0.35 ? 1 : 0);
-  return speck < 0.03 ? ROCK[1] : ROCK[clamp(step, 1, 4)];
+  return speck < 0.03 ? ramp[1] : ramp[clamp(step, 1, 4)];
 }
 
 const darken = (color, by) => (((color >>> 24) << 24) | (Math.min(255, ((color >>> 16) & 255) * by) << 16) | (Math.min(255, ((color >>> 8) & 255) * by) << 8) | Math.min(255, (color & 255) * by)) >>> 0;
@@ -153,11 +215,18 @@ const darken = (color, by) => (((color >>> 24) << 24) | (Math.min(255, ((color >
  * with the turf hanging over its lip and shade at its foot; its other sides show as a thin dark edge. Hands back what stops a walker.
  */
 function raiseGround(pixels, terrain, { raised, slopes }, width, height, seed) {
-  const walls = new Uint8Array(width * height), earth = GROUPS.findIndex((group) => group.id === "dirt"), rocks = createCobbles(seed + 90), isHigh = (x, y) => x >= 0 && y >= 0 && x < width && y < height && raised[y * width + x];
+  const walls = new Uint8Array(width * height), earth = GROUPS.findIndex((group) => group.id === "dirt"), rocks = createCobbles(seed + 90), levelAt = (x, y) => (x >= 0 && y >= 0 && x < width && y < height ? raised[y * width + x] : -1);
+  // most of a big map is far from any edge: tiles with no change of level in or beside them are skipped
+  const cols = (width >> 4) + 3, rows = (height >> 4) + 3, changing = new Uint8Array(cols * rows), edgy = new Uint8Array(cols * rows);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) if ((x + 1 < width && raised[y * width + x] !== raised[y * width + x + 1]) || (y + 1 < height && raised[y * width + x] !== raised[(y + 1) * width + x])) changing[((y >> 4) + 1) * cols + (x >> 4) + 1] = 1;
+  for (let y = 1; y < rows - 1; y++)
+    for (let x = 1; x < cols - 1; x++) if (changing[y * cols + x]) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) edgy[(y + dy) * cols + x + dx] = 1;
+  const quiet = (x, y) => !edgy[((y >> 4) + 1) * cols + (x >> 4) + 1];
   for (let y = 0; y < height; y++)
     for (let x = 0; x < width; x++) {
-      const i = y * width + x;
-      if (raised[i]) continue;
+      if (quiet(x, y)) continue;
+      const i = y * width + x, level = raised[i], isHigh = (px, py) => levelAt(px, py) > level;
       if (isHigh(x, y + 1) || isHigh(x - 1, y) || isHigh(x + 1, y)) {
         if (slopes[Math.min(height - 1, y + SLOPE_LOOK) * width + x]) continue;
         pixels[i] = ROCK[0];
@@ -174,10 +243,11 @@ function raiseGround(pixels, terrain, { raised, slopes }, width, height, seed) {
   // its crest catches the light: a bright line right at the edge, and a broken band behind it
   for (let y = 0; y < height; y++)
     for (let x = 0; x < width; x++) {
-      const i = y * width + x;
-      if (!raised[i]) continue;
+      if (quiet(x, y)) continue;
+      const i = y * width + x, level = raised[i], isLow = (px, py) => levelAt(px, py) >= 0 && levelAt(px, py) < level;
+      if (!level) continue;
       let crest = 0;
-      for (let k = 1; k <= CREST && !crest; k++) if (!isHigh(x - k, y) || !isHigh(x + k, y) || !isHigh(x, y - k) || !isHigh(x, y + k)) crest = k;
+      for (let k = 1; k <= CREST && !crest; k++) if (isLow(x - k, y) || isLow(x + k, y) || isLow(x, y - k) || isLow(x, y + k)) crest = k;
       if (!crest) continue;
       let onSlope = false;
       for (let d = -CREST_STOPS; d <= CREST_STOPS && !onSlope; d += 4) onSlope = !!slopes[Math.min(height - 1, y + CREST + SLOPE_LOOK) * width + clamp(x + d, 0, width - 1)];
@@ -187,7 +257,8 @@ function raiseGround(pixels, terrain, { raised, slopes }, width, height, seed) {
     }
   for (let x = 0; x < width; x++)
     for (let y = 0; y < height - 1; y++) {
-      if (!isHigh(x, y) || isHigh(x, y + 1)) continue;
+      const level = raised[y * width + x], drop = level - raised[(y + 1) * width + x];
+      if (drop <= 0) continue;
       const row = Math.min(height - 1, y + SLOPE_LOOK) * width;
       if (slopes[row + x]) {
         // the ground simply runs down here, as it is, with only a little shade to show the fall
@@ -204,20 +275,26 @@ function raiseGround(pixels, terrain, { raised, slopes }, width, height, seed) {
           near = d;
           break;
         }
-      const top = GROUPS[terrain[y * width + x]].ramp, tall = Math.round((FACE + fbm(x / 13, 0, seed + 92, 2) * 5) * (near / TAPER) ** 0.7), hang = 1 + Math.floor(rand(x >> 1, seed + 93) * OVERHANG);
+      const summit = GROUPS[terrain[y * width + x]], top = summit.ramp, stone = summit.mountain ? CRAG : ROCK, tall = Math.round((FACE * Math.min(drop, MOST_DROP) + fbm(x / 13, 0, seed + 92, 2) * 5) * (near / TAPER) ** 0.7), hang = 1 + Math.floor(rand(x >> 1, seed + 93) * OVERHANG);
       pixels[y * width + x] = top[3];
       walls[y * width + x] = WALL.EDGE;
-      for (let k = 1; k <= tall && y + k < height && !isHigh(x, y + k); k++) {
+      let reached = 0;
+      for (let k = 1; k <= tall && y + k < height && raised[(y + k) * width + x] < level; k++) {
         const i = (y + k) * width + x;
         terrain[i] = earth; // nothing grows on rock, and no blow tears it
         walls[i] = WALL.FACE;
-        pixels[i] = k < hang ? top[2] : k === hang ? top[0] : rockColor(rocks, x, y + k, k / tall, seed);
+        pixels[i] = k < hang ? top[2] : k === hang ? top[0] : rockColor(stone, rocks, x, y + k, k / tall, seed);
+        reached = k;
       }
-      for (let k = 1; k <= SHADOW && y + tall + k < height; k++) {
-        const i = (y + tall + k) * width + x;
-        if (!raised[i]) pixels[i] = darken(pixels[i], k < 3 ? 0.6 : k < 6 ? 0.76 : 0.88);
+      for (let k = 1; k <= SHADOW && y + reached + k < height; k++) {
+        const i = (y + reached + k) * width + x;
+        if (raised[i] < level) pixels[i] = darken(pixels[i], k < 3 ? 0.6 : k < 6 ? 0.76 : 0.88);
       }
     }
+  // a way up is wide: nothing in or right beside a slope stops a walker, however the edge wanders across it
+  const ramps = new Uint8Array(cols * rows);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) if (slopes[y * width + x]) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) ramps[((y >> 4) + 1 + dy) * cols + (x >> 4) + 1 + dx] = 1;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) if (walls[y * width + x] && ramps[((y >> 4) + 1) * cols + (x >> 4) + 1]) walls[y * width + x] = 0;
   return walls;
 }
 
@@ -236,7 +313,7 @@ function plantGrass(terrain, lushAt, width, height, seed) {
   };
   for (let cy = 0; cy < rows; cy++)
     for (let cx = 0; cx <= cols; cx++) {
-      const lush = lushAt[Math.min(height - 1, cy * TILE + 8) * width + Math.min(width - 1, cx * TILE + 8)], tufts = lush > 0.1 ? 5 : lush > -0.1 ? 2 : rand(cx, cy, seed + 40) > 0.5 ? 1 : 0;
+      const lush = lushAt(Math.min(width - 1, cx * TILE + 8), Math.min(height - 1, cy * TILE + 8)), tufts = lush > 0.1 ? 5 : lush > -0.1 ? 2 : rand(cx, cy, seed + 40) > 0.5 ? 1 : 0;
       for (let t = 0; t < tufts; t++) {
         const r = (n) => rand(cx, cy, t, n, seed), x = cx * TILE + Math.floor(r(1) * TILE), y = cy * TILE + Math.floor(r(2) * TILE);
         if (!isGrass(x, y) || !isGrass(x - 3, y) || !isGrass(x + 3, y) || !isGrass(x, y + 2)) continue;
@@ -253,16 +330,12 @@ function plantGrass(terrain, lushAt, width, height, seed) {
 
 export function paintGround(rows, seed, width, height, levels = /** @type {string[] | null} */ (null)) {
   const { terrain, cell } = layOut(rows, width, height, seed), pixels = new Uint32Array(width * height), shore = shoreDistance(terrain, width, height);
-  const waterIndex = GROUPS.findIndex((group) => group.active), water = [], cobbles = createCobbles(seed);
-  const patchAt = new Float32Array(width * height), lushAt = new Float32Array(width * height);
-  for (let y = 0; y < height; y++)
-    for (let x = 0; x < width; x++) {
-      patchAt[y * width + x] = fbm(x / 21, y / 21, seed + 1, 3);
-      lushAt[y * width + x] = fbm(x / 46, y / 46, seed + 2, 2);
-    }
+  const waterIndex = GROUPS.findIndex((group) => group.active), water = [], cobbles = createCobbles(seed), crags = createCobbles(seed + 70);
+  const surfaces = { crag: (group, x, y) => cragColor(group, crags, x, y, seed), snow: (group, x, y) => snowColor(group, x, y, seed), ice: (group, x, y) => iceColor(group, x, y, seed) };
+  const patchAt = coarse(width, height, (x, y) => fbm(x / 21, y / 21, seed + 1, 3)), lushAt = coarse(width, height, (x, y) => fbm(x / 46, y / 46, seed + 2, 2));
   // each tile picks its variant here, with the large patches deciding which kind: tufts gather, flowers come in drifts
   const variantOf = (group, cx, cy) => {
-    const lush = lushAt[clamp(cy * TILE + 8, 0, height - 1) * width + clamp(cx * TILE + 8, 0, width - 1)], pick = rand(cx, cy, seed + GROUPS.indexOf(group));
+    const lush = lushAt(clamp(cx * TILE + 8, 0, width - 1), clamp(cy * TILE + 8, 0, height - 1)), pick = rand(cx, cy, seed + GROUPS.indexOf(group));
     const wanted = lush > 0.16 ? ["flowers", "tufts", "tufts", "worn", "pebbles"] : lush > -0.14 ? ["tufts", "tufts", "pebbles", "worn", "plain"] : ["tufts", "plain", "plain", "cracks"];
     const kind = wanted[Math.floor(pick * wanted.length)], options = group.variants.filter((v) => v.kind === kind);
     if (!options.length) return null;
@@ -279,8 +352,8 @@ export function paintGround(rows, seed, width, height, levels = /** @type {strin
         pixels[i] = bedColor(shore[i], x, y, seed);
         continue;
       }
-      const patch = patchAt[i], C = group.ramp, step = patch > 0.16 ? 2 : patch < -0.16 ? 0 : 1;
-      let color = group.laid ? cobbleColor(group, cobbles, x, y, seed) : group.tones[step];
+      const patch = patchAt(x, y), C = group.ramp, step = patch > 0.16 ? 2 : patch < -0.16 ? 0 : 1;
+      let color = group.laid ? cobbleColor(group, cobbles, x, y, seed) : group.surface ? surfaces[group.surface](group, x, y) : group.tones[step];
       const cx = x >> 4, cy = y >> 4, whole = cell(cx, cy) === g, mark = whole ? variantOf(group, cx, cy) : null;
       if (mark?.[(y & 15) * TILE + (x & 15)]) color = mark[(y & 15) * TILE + (x & 15)];
       // where this group lies over a lower one: a lit lip, and the shade it throws on what's below
@@ -295,7 +368,10 @@ export function paintGround(rows, seed, width, height, levels = /** @type {strin
     }
   const heights = levels ? layHeights(levels, width, height, seed) : null, walls = heights ? raiseGround(pixels, terrain, heights, width, height, seed) : new Uint8Array(width * height);
   for (let i = 0; i < shore.length; i++) if (shore[i] > SHORE) shore[i] = SHORE;
-  return { pixels, terrain, walls, raised: heights?.raised ?? new Uint8Array(width * height), depth: shore, water: Uint16Array.from(water), blades: plantGrass(terrain, lushAt, width, height, seed) };
+  // a cliff standing in the water takes those pixels from it
+  const open = [];
+  for (let n = 0; n < water.length; n += 3) if (terrain[water[n + 1] * width + water[n]] === waterIndex) open.push(water[n], water[n + 1], water[n + 2]);
+  return { pixels, terrain, walls, raised: heights?.raised ?? new Uint8Array(width * height), depth: shore, water: Uint16Array.from(open), blades: plantGrass(terrain, lushAt, width, height, seed) };
 }
 
 /**

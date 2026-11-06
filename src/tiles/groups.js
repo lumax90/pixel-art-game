@@ -60,6 +60,12 @@ const DIRT = ramp(["#3b2b30", "#5a4034", "#7a5a40", "#9a7a54", "#bd9f70"]);
 const STONE = ramp(["#2a2b38", "#454753", "#666871", "#918f8c", "#bcb9a8"]); // cool in the shade, warm in the light
 export const WATER = ramp(["#12304f", "#174a6e", "#1f6a8c", "#3a96a8", "#8fd6d0", "#e6fff0"]);
 const PETALS = ramp(["#f0eee0", "#f2d868", "#e88aa8", "#a8c0f0"]);
+export const CRAG = ramp(["#23262f", "#3c404b", "#5b606a", "#848780", "#aeac98"]);
+const SCREE = ramp(["#2c2a30", "#4a4648", "#6a6460", "#8e887c", "#b4ac98"]);
+const MOSS = ramp(["#2a3a2a", "#46583a", "#6a7a42", "#8f9a50", "#bcc06c"]);
+const SNOW = ramp(["#5a6c8c", "#8a9cbc", "#b8c8dc", "#dce6f0", "#ffffff"]);
+const ICE = ramp(["#1c3e5c", "#2e6c8c", "#5ca4bc", "#9cd4dc", "#e4f8f8"]);
+const LICHEN = ramp(["#8a9a50", "#c4a848"]);
 
 function grassVariants() {
   const rng = new Rng(41), list = [];
@@ -120,16 +126,143 @@ function stoneVariants() {
   return list;
 }
 
+/** A stone lying loose, bigger than a pebble: lit on top, in shade at its foot. */
+function boulder(put, x, y, C) {
+  for (const [dx, dy, tone] of [[0, -1, 4], [1, -1, 3], [-1, 0, 3], [0, 0, 3], [1, 0, 2], [2, 0, 2], [-1, 1, 1], [0, 1, 1], [1, 1, 1], [2, 1, 0]]) put(x + dx, y + dy, C[tone]);
+}
+
+function cragVariants() {
+  const rng = new Rng(53), list = [];
+  for (let n = 0; n < 6; n++) list.push({ kind: "plain", pixels: createVariant(() => {}) });
+  for (let n = 0; n < 6; n++)
+    list.push({
+      kind: "cracks",
+      pixels: createVariant((put) => {
+        const [x, y] = spot(rng);
+        crack(put, rng, Math.min(x, 5), y, rng.int(4, 9), CRAG[0]);
+      }),
+    });
+  for (let n = 0; n < 5; n++)
+    list.push({
+      kind: "worn",
+      pixels: createVariant((put) => {
+        const [x, y] = spot(rng), tone = LICHEN[n % 2];
+        for (const [dx, dy] of [[0, 0], [1, 0], [-1, 1], [0, 1], [1, 1], [2, 1]]) if (rng.chance(0.8)) put(x + dx, y + dy, tone);
+      }),
+    });
+  for (let n = 0; n < 4; n++) list.push({ kind: "pebbles", pixels: createVariant((put) => boulder(put, ...spot(rng), CRAG)) });
+  return list;
+}
+
+function screeVariants() {
+  const rng = new Rng(59), list = [];
+  for (let n = 0; n < 3; n++) list.push({ kind: "plain", pixels: createVariant(() => {}) });
+  for (let n = 0; n < 8; n++)
+    list.push({
+      kind: "pebbles",
+      pixels: createVariant((put) => {
+        for (let k = 0; k < 3 + n % 4; k++) pebble(put, ...spot(rng), SCREE, rng.chance(0.6));
+      }),
+    });
+  for (let n = 0; n < 6; n++)
+    list.push({
+      kind: "worn",
+      pixels: createVariant((put) => {
+        boulder(put, ...spot(rng), SCREE);
+        pebble(put, ...spot(rng), SCREE, true);
+        pebble(put, ...spot(rng), SCREE, false);
+      }),
+    });
+  return list;
+}
+
+function mossVariants() {
+  const rng = new Rng(61), list = [];
+  for (let n = 0; n < 5; n++) list.push({ kind: "plain", pixels: createVariant(() => {}) });
+  for (let n = 0; n < 8; n++)
+    list.push({
+      kind: "tufts",
+      pixels: createVariant((put) => {
+        // cushions of moss, low and round: nothing on a mountain stands tall
+        for (let k = 0; k <= n % 3; k++) {
+          const [x, y] = spot(rng);
+          for (const [dx, dy, tone] of [[-1, 1, 1], [0, 1, 1], [1, 1, 1], [-1, 0, 3], [0, 0, 3], [1, 0, 2], [0, -1, 4]]) put(x + dx, y + dy, MOSS[tone]);
+        }
+      }),
+    });
+  for (let n = 0; n < 4; n++)
+    list.push({
+      kind: "flowers",
+      pixels: createVariant((put) => {
+        for (let k = 0; k < 2 + n % 3; k++) {
+          const [x, y] = spot(rng);
+          put(x, y, PETALS[n % 2 ? 3 : 0]);
+          put(x, y + 1, MOSS[1]);
+        }
+      }),
+    });
+  return list;
+}
+
+function snowVariants() {
+  const rng = new Rng(67), list = [];
+  for (let n = 0; n < 8; n++) list.push({ kind: "plain", pixels: createVariant(() => {}) });
+  for (let n = 0; n < 6; n++)
+    list.push({
+      kind: "worn",
+      pixels: createVariant((put) => {
+        // a scoop the wind cut: a blue shadow under a bright lip
+        const [x, y] = spot(rng), long = rng.int(3, 6), left = Math.min(x, 7);
+        for (let k = 0; k < long; k++) {
+          put(left + k, y, SNOW[4]);
+          put(left + k, y + 1, SNOW[k === 0 || k === long - 1 ? 2 : 1]);
+        }
+      }),
+    });
+  for (let n = 0; n < 4; n++)
+    list.push({
+      kind: "pebbles",
+      pixels: createVariant((put) => {
+        // rock showing through
+        const [x, y] = spot(rng);
+        for (const [dx, dy, tone] of [[0, 0, 1], [1, 0, 2], [0, 1, 0], [1, 1, 1], [2, 1, 0]]) put(x + dx, y + dy, CRAG[tone]);
+        put(x, y - 1, SNOW[4]);
+        put(x + 1, y - 1, SNOW[4]);
+      }),
+    });
+  return list;
+}
+
+function iceVariants() {
+  const rng = new Rng(71), list = [];
+  for (let n = 0; n < 7; n++) list.push({ kind: "plain", pixels: createVariant(() => {}) });
+  for (let n = 0; n < 6; n++)
+    list.push({
+      kind: "cracks",
+      pixels: createVariant((put) => {
+        const [x, y] = spot(rng);
+        crack(put, rng, Math.min(x, 6), y, rng.int(4, 8), ICE[n % 2]);
+      }),
+    });
+  return list;
+}
+
 /**
  * Lowest first: a group higher in the list lies over the ones below it where they meet. `tones` are the three close colors
  * large soft patches of ground take; the ramp is for what stands out. `wander` is how far its border strays: laid stone keeps
  * a straighter line than grass. `rim` colors the edge of a group lying over another. `debris` is what a blow throws up from it.
+ * `surface` names how its ground is painted when it's more than soft patches. `mountain`: a cliff under it is grey mountain rock, not earth.
  */
 export const GROUPS = [
   { id: "water", name: "Su", char: "~", ramp: WATER, active: true, debris: "#2c4a78", variants: [] },
   { id: "dirt", name: "Toprak", char: ".", ramp: DIRT, debris: "#5e4430", tones: ramp(["#75563f", "#7f5f45", "#8a6a4c"]), variants: dirtVariants() },
+  { id: "scree", mountain: true, name: "Moloz", char: "s", ramp: SCREE, debris: "#6a6460", tones: ramp(["#635e5a", "#6c6762", "#76706a"]), variants: screeVariants() },
+  { id: "crag", mountain: true, name: "Kaya", char: "r", ramp: CRAG, debris: "#5b606a", tones: ramp(["#4f535d", "#595d66", "#646870"]), surface: "crag", wander: 0.8, variants: cragVariants() },
   { id: "stone", name: "Taş", char: "#", ramp: STONE, debris: "#5f6170", tones: ramp(["#5a5c68", "#646672", "#6f7078"]), laid: true, wander: 0.4, variants: stoneVariants() },
+  { id: "moss", mountain: true, name: "Dağ çayırı", char: "m", ramp: MOSS, debris: "#4a4230", tones: ramp(["#67763f", "#717f45", "#7c894c"]), rim: true, variants: mossVariants() },
   { id: "grass", name: "Çim", char: ",", ramp: GRASS, debris: "#4d3b28", tones: ramp(["#427e3f", "#498842", "#519346"]), rim: true, grows: true, variants: grassVariants() },
+  { id: "ice", mountain: true, name: "Buzul", char: "i", ramp: ICE, debris: "#9cd4dc", tones: ramp(["#7cbccc", "#8ccad6", "#9cd6de"]), surface: "ice", variants: iceVariants() },
+  { id: "snow", mountain: true, name: "Kar", char: "*", ramp: SNOW, debris: "#dce6f0", tones: ramp(["#c4d2e4", "#d6e0ec", "#e6ecf4"]), surface: "snow", rim: true, variants: snowVariants() },
 ];
 
 const shades = (rows) => rows.map(ramp);

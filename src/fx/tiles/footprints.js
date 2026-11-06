@@ -20,6 +20,7 @@ const LOOKS = {
   mud: { sole: hex("#33241d"), lip: hex("#7a6048"), alpha: 0.9, life: 15 },
   grass: { sole: hex("#2f6233"), lip: 0, alpha: 0.42, life: 4 },
   wet: { sole: hex("#3b3d4a"), lip: 0, alpha: 0.6, life: 5 },
+  snow: { sole: hex("#9db0cc"), lip: hex("#f4f8fc"), alpha: 0.85, life: 14 },
 };
 const MOST = 80; // prints kept at once; the oldest goes first
 const SOLE = 2, HEEL = -3, GAP = -1, HALF_WIDE = 1; // px along the foot, from its middle, and to each side

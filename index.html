@@ -60,6 +60,16 @@
       button:hover {
         background: #352e45;
       }
+      #loading {
+        position: fixed;
+        top: 45%;
+        right: 0;
+        left: 0;
+        z-index: 20;
+        color: #e0c88c;
+        text-align: center;
+        pointer-events: none;
+      }
       #tile-button {
         position: fixed;
         top: 10px;
@@ -114,6 +124,87 @@
       #weather-panel input[type="range"] {
         width: 100%;
         margin: 0;
+      }
+      #inventory-button {
+        position: fixed;
+        top: 10px;
+        right: 182px;
+      }
+      #characters {
+        position: fixed;
+        top: 44px;
+        left: 10px;
+        display: flex;
+        gap: 4px;
+      }
+      #characters button.on {
+        background: #5a4428;
+        border-color: #a8884c;
+      }
+      #inventory {
+        position: fixed;
+        top: 48px;
+        right: 10px;
+        padding: 8px 10px 10px;
+        border: 2px solid #6a5434;
+        border-radius: 4px;
+        background: #1c1712f2;
+        user-select: none;
+      }
+      #inventory[hidden] {
+        display: none;
+      }
+      #inventory h2 {
+        margin: 0 0 6px;
+        color: #e0c88c;
+        font-size: 14px;
+        text-align: center;
+      }
+      #paperdoll {
+        position: relative;
+        margin-bottom: 8px;
+      }
+      #inventory .slot {
+        position: absolute;
+        box-sizing: border-box;
+        border: 1px solid #5a4a34;
+        background: #0f0d14;
+      }
+      #inventory .slot.takes {
+        border-color: #e0c88c;
+        background: #2a2418;
+      }
+      #stash {
+        position: relative;
+        border: 1px solid #5a4a34;
+        background-color: #0f0d14;
+        background-image: linear-gradient(#332a20 1px, transparent 1px), linear-gradient(90deg, #332a20 1px, transparent 1px);
+      }
+      .item {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        background: #2a2438;
+        box-shadow: inset 0 0 0 1px #4a4058;
+        cursor: grab;
+        touch-action: none;
+      }
+      .slot .item {
+        background: #1c1824;
+      }
+      .item.dragged {
+        position: fixed;
+        z-index: 10;
+        pointer-events: none;
+        opacity: 0.9;
+      }
+      .item canvas {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        cursor: inherit;
+        pointer-events: none;
       }
       #tile-book {
         position: fixed;
@@ -190,11 +281,15 @@
     </style>
   </head>
   <body>
+    <div id="loading"></div>
+    <script>
+      if (location.search.includes("map=geiranger")) document.getElementById("loading").textContent = "Harita hazırlanıyor, yaklaşık bir dakika sürebilir…";
+    </script>
     <div id="game"></div>
     <div id="fps"></div>
     <div id="hud">
       <div id="skills"></div>
-      <div><kbd>WASD</kbd> hareket &nbsp; <kbd>Shift</kbd> koşu &nbsp; <kbd>Sol tık</kbd> saldırı &nbsp; <kbd>T</kbd> yük testi &nbsp; <kbd>K</kbd> +25 knight &nbsp; <span id="stats"></span></div>
+      <div><kbd>WASD</kbd> hareket &nbsp; <kbd>Sol tık</kbd> saldırı &nbsp; <kbd>I</kbd> envanter &nbsp; <kbd>T</kbd> yük testi &nbsp; <kbd>K</kbd> +25 knight &nbsp; <span id="stats"></span></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

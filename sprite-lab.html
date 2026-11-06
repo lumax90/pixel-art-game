@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Piksel Denemesi</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        padding: 12px;
+        background: #14121a;
+        color: #e8e4f0;
+        font: 13px/1.4 system-ui, sans-serif;
+      }
+      h2 {
+        margin: 14px 0 6px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      canvas {
+        display: block;
+        max-width: 100%;
+        image-rendering: pixelated;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Koşu, sağa ve sola</h2>
+    <canvas id="stage"></canvas>
+    <h2>Kareler</h2>
+    <canvas id="strip"></canvas>
+    <script type="module" src="/src/lab/sprite-lab.js"></script>
+  </body>
+</html>

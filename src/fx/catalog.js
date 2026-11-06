@@ -15,10 +15,13 @@ import * as lightningStrike from "../../vendor/pixelfx/src/fx/lightning/lightnin
 import * as spinSlash from "../../vendor/pixelfx/src/fx/melee/spin-slash.js";
 import * as thorns from "../../vendor/pixelfx/src/fx/nature/thorns.js";
 import * as splash from "../../vendor/pixelfx/src/fx/water/splash.js";
+import * as waterfall from "../../vendor/pixelfx/src/fx/water/waterfall.js";
 import * as poisonArrow from "./poison/poison-arrow.js";
 import * as footprints from "./tiles/footprints.js";
 import * as knight from "./characters/knight.js";
+import * as template from "./characters/template.js";
 import * as grass from "./tiles/grass.js";
+import * as landTouches from "./tiles/land-touches.js";
 import * as water from "./tiles/water.js";
 import * as sky from "./weather/sky.js";
 import * as snowCover from "./weather/snow-cover.js";
@@ -27,7 +30,10 @@ import * as splashes from "./weather/splashes.js";
 export const CATALOG = {
   "fire/brazier": brazier,
   "characters/knight": knight,
+  "characters/template": template,
+  "water/waterfall": waterfall,
   "tiles/grass": grass,
+  "tiles/land-touches": landTouches,
   "tiles/water": water,
   "weather/sky": sky,
   "weather/snow-cover": snowCover,

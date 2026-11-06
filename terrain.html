@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>3D Arazi Denemesi</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #14121a;
+        color: #e8e4f0;
+        font: 13px/1.4 ui-monospace, Consolas, monospace;
+      }
+      canvas {
+        display: block;
+        image-rendering: pixelated;
+      }
+      #note {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        padding: 3px 8px;
+        border-radius: 4px;
+        background: #14121acc;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="note">Yükleniyor…</div>
+    <script type="module" src="/src/terrain/main.js"></script>
+  </body>
+</html>

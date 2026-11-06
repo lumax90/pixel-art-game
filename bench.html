@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Karakter Tezgahı</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        padding: 12px;
+        background: #14121a;
+        color: #e8e4f0;
+        font: 13px/1.4 system-ui, sans-serif;
+      }
+      #controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      button {
+        padding: 5px 10px;
+        border: 1px solid #4a4658;
+        border-radius: 4px;
+        background: #26232f;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      button.on {
+        background: #5a4a8c;
+        border-color: #8c7cc4;
+      }
+      .gap {
+        width: 10px;
+      }
+      #stand {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: flex-start;
+      }
+      canvas {
+        display: block;
+        max-width: 100%;
+        image-rendering: pixelated;
+      }
+      #hub {
+        display: grid;
+        gap: 6px;
+      }
+      .slot {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      .slot span {
+        width: 64px;
+        color: #b0aabc;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="controls"></div>
+    <div id="stand">
+      <canvas id="stage"></canvas>
+      <div id="hub"></div>
+    </div>
+    <script type="module" src="/src/bench.js"></script>
+  </body>
+</html>

@@ -2,6 +2,7 @@ import * as Phaser from "phaser";
 
 // effects are animated at 30 fps; a faster screen only pays for repeats of the same picture
 const TICK = 1 / 30;
+const HERO_TICK = 1 / 60; // he's what the eye is on: drawn every so many screen refreshes, the whole number nearest this, since anything else spaces his frames unevenly
 const MAX_DT = 0.1;
 const SPARE_CORES = 2; // left for the game itself and the browser
 const MAX_WORKERS = 6;
@@ -16,11 +17,18 @@ type Command =
 /** What the game can tell a live character, besides where it is. */
 export interface FxState {
   facing?: number;
+  vx?: number;
+  vy?: number;
   guard?: boolean;
   stroke?: number;
   strokeId?: number;
   connects?: boolean;
   amount?: number;
+  ground?: number[];
+  look?: string;
+  gear?: string[];
+  sword?: boolean;
+  stance?: string;
 }
 
 interface Reply {
@@ -99,6 +107,8 @@ export class FxLayer {
   private readonly slots: Slot[];
   private nextId = 1;
   private clock = 0;
+  private refresh = 1 / 60; // seconds a screen frame takes, as measured
+  private heroWaited = 0;
   private sent = 0;
   private heaviest = { name: "", ms: 0 };
 
@@ -247,14 +257,18 @@ export class FxLayer {
 
   update(dt: number, viewX: number, viewY: number, hero: { x: number; y: number }, weather: object) {
     this.clock += dt;
+    this.refresh += (Math.min(dt, 0.05) - this.refresh) * 0.05;
+    this.heroWaited++;
+    const heroDue = this.heroWaited >= Math.max(1, Math.round(HERO_TICK / this.refresh));
     const ox = Math.floor(viewX) - OVERSCAN, oy = Math.floor(viewY) - OVERSCAN;
     for (const slot of this.slots) {
       slot.dt += dt;
       const idle = !slot.active && !slot.commands.length && !slot.moves.size && !slot.planned;
       if (idle) slot.dt = 0;
-      if (idle || slot.busy || this.clock < slot.nextTick) continue;
+      if (idle || slot.busy || !(slot === this.hero ? heroDue : this.clock >= slot.nextTick)) continue;
       // each worker goes again as soon as it's due and free: one that runs a little late loses a little, not a whole tick
-      slot.nextTick = Math.max(slot.nextTick + TICK, this.clock);
+      if (slot === this.hero) this.heroWaited = 0;
+      else slot.nextTick = Math.max(slot.nextTick + TICK, this.clock);
       slot.busy = true;
       const anchor = slot === this.hero ? [Math.round(hero.x), Math.round(hero.y)] : undefined;
       slot.worker.postMessage({ type: "tick", dt: Math.min(slot.dt, MAX_DT), commands: [...slot.commands, ...slot.moves.values()], ox, oy, anchor, weather });
